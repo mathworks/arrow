@@ -17,25 +17,29 @@
 
 
 cdef _sequence_to_array(object sequence, object size, DataType type,
-                        CMemoryPool* pool):
+                        CMemoryPool* pool, c_bool from_pandas):
     cdef shared_ptr[CArray] out
     cdef int64_t c_size
     if type is None:
         if size is None:
             with nogil:
-                check_status(ConvertPySequence(sequence, pool, &out))
+                check_status(
+                    ConvertPySequence(sequence, pool, from_pandas, &out)
+                )
         else:
             c_size = size
             with nogil:
                 check_status(
-                    ConvertPySequence(sequence, c_size, pool, &out)
+                    ConvertPySequence(
+                        sequence, c_size, pool, from_pandas, &out
+                    )
                 )
     else:
         if size is None:
             with nogil:
                 check_status(
                     ConvertPySequence(
-                        sequence, type.sp_type, pool, &out,
+                        sequence, type.sp_type, pool, from_pandas, &out,
                     )
                 )
         else:
@@ -43,7 +47,8 @@ cdef _sequence_to_array(object sequence, object size, DataType type,
             with nogil:
                 check_status(
                     ConvertPySequence(
-                        sequence, c_size, type.sp_type, pool, &out,
+                        sequence, c_size, type.sp_type, pool, from_pandas,
+                        &out,
                     )
                 )
 
@@ -178,7 +183,7 @@ def array(object obj, type=None, mask=None,
     else:
         if mask is not None:
             raise ValueError("Masks only supported with ndarray-like inputs")
-        return _sequence_to_array(obj, size, type, pool)
+        return _sequence_to_array(obj, size, type, pool, from_pandas)
 
 
 def asarray(values, type=None):
@@ -598,6 +603,21 @@ cdef class Array:
             check_status(ConvertArrayToPandas(options, self.sp_array,
                                               self, &out))
         return wrap_array_output(out)
+
+    def to_numpy(self):
+        """
+        Construct a NumPy view of this array
+        """
+        if self.null_count:
+            raise NotImplementedError('NumPy array view is only supported '
+                                      'for arrays without nulls.')
+        if not is_primitive(self.type.id):
+            raise NotImplementedError('NumPy array view is only supported '
+                                      'for primitive types.')
+        buflist = self.buffers()
+        assert len(buflist) == 2
+        return np.frombuffer(buflist[-1], dtype=self.type.to_pandas_dtype())[
+            self.offset:self.offset + len(self)]
 
     def to_pylist(self):
         """

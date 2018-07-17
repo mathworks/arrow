@@ -569,6 +569,12 @@ class TestConvertPrimitiveTypes(object):
         df = pd.DataFrame(data)
         _check_pandas_roundtrip(df)
 
+        # Do the same with pa.array()
+        # (for some reason, it doesn't use the same code paths at all)
+        for np_arr in data.values():
+            arr = pa.array(np_arr)
+            assert arr.to_pylist() == np_arr.tolist()
+
     def test_integer_with_nulls(self):
         # pandas requires upcast to float dtype
 
@@ -2084,3 +2090,19 @@ def _pytime_to_micros(pytime):
             pytime.minute * 60000000 +
             pytime.second * 1000000 +
             pytime.microsecond)
+
+
+def test_convert_unsupported_type_error_message():
+    # ARROW-1454
+
+    df = pd.DataFrame({
+        't1': pd.date_range('2000-01-01', periods=20),
+        't2': pd.date_range('2000-05-01', periods=20)
+    })
+
+    # timedelta64 as yet unsupported
+    df['diff'] = df.t2 - df.t1
+
+    expected_msg = 'Conversion failed for column diff with type timedelta64'
+    with pytest.raises(pa.ArrowNotImplementedError, match=expected_msg):
+        pa.Table.from_pandas(df)

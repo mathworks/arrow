@@ -94,13 +94,16 @@ class build_ext(_build_ext):
     description = "Build the C-extensions for arrow"
     user_options = ([('cmake-generator=', None, 'CMake generator'),
                      ('extra-cmake-args=', None, 'extra arguments for CMake'),
-                     ('build-type=', None, 'build type (debug or release)'),
+                     ('build-type=', None,
+                      'build type (debug or release), default release'),
                      ('boost-namespace=', None,
                       'namespace of boost (default: boost)'),
                      ('with-parquet', None, 'build the Parquet extension'),
                      ('with-static-parquet', None, 'link parquet statically'),
                      ('with-static-boost', None, 'link boost statically'),
                      ('with-plasma', None, 'build the Plasma extension'),
+                     ('with-tensorflow', None,
+                      'build pyarrow with TensorFlow support'),
                      ('with-orc', None, 'build the ORC extension'),
                      ('generate-coverage', None,
                       'enable Cython code coverage'),
@@ -116,7 +119,8 @@ class build_ext(_build_ext):
         if not self.cmake_generator and sys.platform == 'win32':
             self.cmake_generator = 'Visual Studio 14 2015 Win64'
         self.extra_cmake_args = os.environ.get('PYARROW_CMAKE_OPTIONS', '')
-        self.build_type = os.environ.get('PYARROW_BUILD_TYPE', 'debug').lower()
+        self.build_type = os.environ.get('PYARROW_BUILD_TYPE',
+                                         'release').lower()
         self.boost_namespace = os.environ.get('PYARROW_BOOST_NAMESPACE',
                                               'boost')
 
@@ -136,6 +140,8 @@ class build_ext(_build_ext):
             os.environ.get('PYARROW_WITH_STATIC_BOOST', '0'))
         self.with_plasma = strtobool(
             os.environ.get('PYARROW_WITH_PLASMA', '0'))
+        self.with_tensorflow = strtobool(
+            os.environ.get('PYARROW_WITH_TENSORFLOW', '0'))
         self.with_orc = strtobool(
             os.environ.get('PYARROW_WITH_ORC', '0'))
         self.generate_coverage = strtobool(
@@ -194,6 +200,9 @@ class build_ext(_build_ext):
 
             if self.with_plasma:
                 cmake_options.append('-DPYARROW_BUILD_PLASMA=on')
+
+            if self.with_tensorflow:
+                cmake_options.append('-DPYARROW_USE_TENSORFLOW=on')
 
             if self.with_orc:
                 cmake_options.append('-DPYARROW_BUILD_ORC=on')
@@ -334,8 +343,8 @@ class build_ext(_build_ext):
                                 pjoin(os.path.dirname(ext_path),
                                       name + '_api.h'))
 
-            # Move the plasma store
             if self.with_plasma:
+                # Move the plasma store
                 source = os.path.join(self.build_type, "plasma_store")
                 target = os.path.join(build_lib,
                                       self._get_build_dir(),
