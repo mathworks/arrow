@@ -23,7 +23,7 @@
 
 This is a very early stage MATLAB interface to the Apache Arrow C++ libraries.
 
-The current code only supports reading numeric types from Feather files.
+The current code only supports reading/writing numeric types from/to Feather files.
 
 ## Building from source
 
@@ -59,14 +59,20 @@ To specify a non-standard Arrow install location, use the ARROW_HOME CMake flag:
 >> addpath build;
 ```
 
-### Read a Feather file into MATLAB as a table
+### Write a MATLAB table to a Feather file
 
 ``` matlab
->> filename = fullfile('arrow', 'matlab', 'test', 'numericDatatypesWithNoNulls.feather');
->> t = featherread(filename);
+>> t = array2table(rand(10, 10));
+>> filename = 'table.feather';
+>> featherwrite(filename,t);
 ```
 
-This should return a MATLAB table datatype containing the Feather file contents.
+### Read a Feather file into a MATLAB table
+
+``` matlab
+>> filename = 'table.feather';
+>> t = featherread(filename);
+```
 
 ## Running the tests
 
