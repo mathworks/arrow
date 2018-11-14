@@ -18,24 +18,27 @@
 #ifndef ARROW_ARRAY_H
 #define ARROW_ARRAY_H
 
-#include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <iosfwd>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "arrow/buffer.h"
 #include "arrow/type.h"
-#include "arrow/type_fwd.h"
 #include "arrow/type_traits.h"
 #include "arrow/util/bit-util.h"
 #include "arrow/util/checked_cast.h"
 #include "arrow/util/macros.h"
 #include "arrow/util/visibility.h"
-#include "arrow/visitor.h"
 
 namespace arrow {
+
+class Array;
+class ArrayVisitor;
 
 using BufferVector = std::vector<std::shared_ptr<Buffer>>;
 
@@ -47,9 +50,6 @@ constexpr int64_t kUnknownNullCount = -1;
 
 class MemoryPool;
 class Status;
-
-template <typename T>
-struct Decimal;
 
 // ----------------------------------------------------------------------
 // Generic array data container
@@ -204,7 +204,7 @@ class ARROW_EXPORT Array {
   /// \brief Return true if value at index is null. Does not boundscheck
   bool IsNull(int64_t i) const {
     return null_bitmap_data_ != NULLPTR &&
-           BitUtil::BitNotSet(null_bitmap_data_, i + data_->offset);
+           !BitUtil::GetBit(null_bitmap_data_, i + data_->offset);
   }
 
   /// \brief Return true if value at index is valid (not null). Does not
@@ -317,6 +317,7 @@ static inline std::ostream& operator<<(std::ostream& os, const Array& x) {
   return os;
 }
 
+/// Base class for non-nested arrays
 class ARROW_EXPORT FlatArray : public Array {
  protected:
   using Array::Array;
@@ -338,7 +339,7 @@ class ARROW_EXPORT NullArray : public FlatArray {
   }
 };
 
-/// Base class for fixed-size logical types
+/// Base class for arrays of fixed-size logical types
 class ARROW_EXPORT PrimitiveArray : public FlatArray {
  public:
   PrimitiveArray(const std::shared_ptr<DataType>& type, int64_t length,
@@ -394,6 +395,7 @@ class ARROW_EXPORT NumericArray : public PrimitiveArray {
   using PrimitiveArray::PrimitiveArray;
 };
 
+/// Concrete Array class for boolean data
 class ARROW_EXPORT BooleanArray : public PrimitiveArray {
  public:
   using TypeClass = BooleanType;
@@ -416,6 +418,7 @@ class ARROW_EXPORT BooleanArray : public PrimitiveArray {
 // ----------------------------------------------------------------------
 // ListArray
 
+/// Concrete Array class for list data
 class ARROW_EXPORT ListArray : public Array {
  public:
   using TypeClass = ListType;
@@ -473,6 +476,7 @@ class ARROW_EXPORT ListArray : public Array {
 // ----------------------------------------------------------------------
 // Binary and String
 
+/// Concrete Array class for variable-size binary data
 class ARROW_EXPORT BinaryArray : public FlatArray {
  public:
   using TypeClass = BinaryType;
@@ -540,6 +544,7 @@ class ARROW_EXPORT BinaryArray : public FlatArray {
   const uint8_t* raw_data_;
 };
 
+/// Concrete Array class for variable-size string (utf-8) data
 class ARROW_EXPORT StringArray : public BinaryArray {
  public:
   using TypeClass = StringType;
@@ -563,6 +568,7 @@ class ARROW_EXPORT StringArray : public BinaryArray {
 // ----------------------------------------------------------------------
 // Fixed width binary
 
+/// Concrete Array class for fixed-size binary data
 class ARROW_EXPORT FixedSizeBinaryArray : public PrimitiveArray {
  public:
   using TypeClass = FixedSizeBinaryType;
@@ -584,7 +590,8 @@ class ARROW_EXPORT FixedSizeBinaryArray : public PrimitiveArray {
  protected:
   inline void SetData(const std::shared_ptr<ArrayData>& data) {
     this->PrimitiveArray::SetData(data);
-    byte_width_ = checked_cast<const FixedSizeBinaryType&>(*type()).byte_width();
+    byte_width_ =
+        internal::checked_cast<const FixedSizeBinaryType&>(*type()).byte_width();
   }
 
   int32_t byte_width_;
@@ -592,6 +599,8 @@ class ARROW_EXPORT FixedSizeBinaryArray : public PrimitiveArray {
 
 // ----------------------------------------------------------------------
 // Decimal128Array
+
+/// Concrete Array class for 128-bit decimal data
 class ARROW_EXPORT Decimal128Array : public FixedSizeBinaryArray {
  public:
   using TypeClass = Decimal128Type;
@@ -610,6 +619,7 @@ using DecimalArray = Decimal128Array;
 // ----------------------------------------------------------------------
 // Struct
 
+/// Concrete Array class for struct data
 class ARROW_EXPORT StructArray : public Array {
  public:
   using TypeClass = StructType;
@@ -621,10 +631,15 @@ class ARROW_EXPORT StructArray : public Array {
               std::shared_ptr<Buffer> null_bitmap = NULLPTR, int64_t null_count = 0,
               int64_t offset = 0);
 
+  const StructType* struct_type() const;
+
   // Return a shared pointer in case the requestor desires to share ownership
   // with this array.  The returned array has its offset, length and null
   // count adjusted.
   std::shared_ptr<Array> field(int pos) const;
+
+  /// Returns null if name not found
+  std::shared_ptr<Array> GetFieldByName(const std::string& name) const;
 
   /// \brief Flatten this array as a vector of arrays, one for each field
   ///
@@ -640,6 +655,7 @@ class ARROW_EXPORT StructArray : public Array {
 // ----------------------------------------------------------------------
 // Union
 
+/// Concrete Array class for union data
 class ARROW_EXPORT UnionArray : public Array {
  public:
   using TypeClass = UnionType;
@@ -694,7 +710,9 @@ class ARROW_EXPORT UnionArray : public Array {
   const type_id_t* raw_type_ids() const { return raw_type_ids_ + data_->offset; }
   const int32_t* raw_value_offsets() const { return raw_value_offsets_ + data_->offset; }
 
-  UnionMode::type mode() const { return checked_cast<const UnionType&>(*type()).mode(); }
+  UnionMode::type mode() const {
+    return internal::checked_cast<const UnionType&>(*type()).mode();
+  }
 
   // Return the given field as an individual array.
   // For sparse unions, the returned array has its offset, length and null
@@ -718,21 +736,23 @@ class ARROW_EXPORT UnionArray : public Array {
 // ----------------------------------------------------------------------
 // DictionaryArray (categorical and dictionary-encoded in memory)
 
-// A dictionary array contains an array of non-negative integers (the
-// "dictionary indices") along with a data type containing a "dictionary"
-// corresponding to the distinct values represented in the data.
-//
-// For example, the array
-//
-//   ["foo", "bar", "foo", "bar", "foo", "bar"]
-//
-// with dictionary ["bar", "foo"], would have dictionary array representation
-//
-//   indices: [1, 0, 1, 0, 1, 0]
-//   dictionary: ["bar", "foo"]
-//
-// The indices in principle may have any integer type (signed or unsigned),
-// though presently data in IPC exchanges must be signed int32.
+/// \brief Concrete Array class for dictionary data
+///
+/// A dictionary array contains an array of non-negative integers (the
+/// "dictionary indices") along with a data type containing a "dictionary"
+/// corresponding to the distinct values represented in the data.
+///
+/// For example, the array
+///
+///   ["foo", "bar", "foo", "bar", "foo", "bar"]
+///
+/// with dictionary ["bar", "foo"], would have dictionary array representation
+///
+///   indices: [1, 0, 1, 0, 1, 0]
+///   dictionary: ["bar", "foo"]
+///
+/// The indices in principle may have any integer type (signed or unsigned),
+/// though presently data in IPC exchanges must be signed int32.
 class ARROW_EXPORT DictionaryArray : public Array {
  public:
   using TypeClass = DictionaryType;

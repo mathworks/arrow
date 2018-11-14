@@ -23,15 +23,26 @@ source $TRAVIS_BUILD_DIR/ci/travis_env_common.sh
 source $TRAVIS_BUILD_DIR/ci/travis_install_conda.sh
 
 export ARROW_HOME=$ARROW_CPP_INSTALL
-export PARQUET_HOME=$ARROW_PYTHON_PARQUET_HOME
-export LD_LIBRARY_PATH=$ARROW_HOME/lib:$PARQUET_HOME/lib:$LD_LIBRARY_PATH
+export PARQUET_HOME=$ARROW_CPP_INSTALL
+export LD_LIBRARY_PATH=$ARROW_HOME/lib:$LD_LIBRARY_PATH
 export PYARROW_CXXFLAGS="-Werror"
+
+PYARROW_PYTEST_FLAGS=" -r sxX --durations=15 --parquet"
 
 PYTHON_VERSION=$1
 CONDA_ENV_DIR=$TRAVIS_BUILD_DIR/pyarrow-test-$PYTHON_VERSION
 
 conda create -y -q -p $CONDA_ENV_DIR python=$PYTHON_VERSION cmake curl
-source activate $CONDA_ENV_DIR
+conda activate $CONDA_ENV_DIR
+
+# We should use zlib in the target Python directory to avoid loading
+# wrong libpython on macOS at run-time. If we use zlib in
+# $ARROW_BUILD_TOOLCHAIN and libpython3.6m.dylib exists in both
+# $ARROW_BUILD_TOOLCHAIN and $CONDA_ENV_DIR, python-test uses
+# libpython3.6m.dylib on $ARROW_BUILD_TOOLCHAIN not $CONDA_ENV_DIR.
+# libpython3.6m.dylib on $ARROW_BUILD_TOOLCHAIN doesn't have NumPy. So
+# python-test fails.
+export ZLIB_HOME=$CONDA_ENV_DIR
 
 python --version
 which python
@@ -48,6 +59,15 @@ conda install -y -q pip \
       pandas \
       cython
 
+if [ "$ARROW_TRAVIS_PYTHON_DOCS" == "1" ] && [ "$PYTHON_VERSION" == "3.6" ]; then
+  # Install documentation dependencies
+  conda install -y -q \
+        ipython \
+        numpydoc \
+        sphinx=1.7.9 \
+        sphinx_rtd_theme
+fi
+
 # ARROW-2093: PyTorch increases the size of our conda dependency stack
 # significantly, and so we have disabled these tests in Travis CI for now
 
@@ -59,6 +79,7 @@ conda install -y -q pip \
 
 if [ $TRAVIS_OS_NAME != "osx" ]; then
   conda install -y -c conda-forge tensorflow
+  PYARROW_PYTEST_FLAGS="$PYARROW_PYTEST_FLAGS --tensorflow"
 fi
 
 # Re-build C++ libraries with the right Python setup
@@ -75,9 +96,14 @@ if [ $ARROW_TRAVIS_COVERAGE == "1" ]; then
   CMAKE_COMMON_FLAGS="$CMAKE_COMMON_FLAGS -DARROW_GENERATE_COVERAGE=ON"
 fi
 
+if [ $ARROW_TRAVIS_PYTHON_GANDIVA == "1" ]; then
+  CMAKE_COMMON_FLAGS="$CMAKE_COMMON_FLAGS -DARROW_GANDIVA=ON -DARROW_GANDIVA_BUILD_TESTS=OFF"
+fi
+
 cmake -GNinja \
       $CMAKE_COMMON_FLAGS \
       -DARROW_BUILD_TESTS=on \
+      -DARROW_TEST_INCLUDE_LABELS=python \
       -DARROW_BUILD_UTILITIES=off \
       -DARROW_PLASMA=on \
       -DARROW_TENSORFLOW=on \
@@ -99,8 +125,9 @@ pushd $ARROW_PYTHON_DIR
 
 # Other stuff pip install
 pip install -q -r requirements.txt
-if [ "$PYTHON_VERSION" == "2.7" ]; then
-  pip install -q futures
+
+if [ "$PYTHON_VERSION" == "3.6" ]; then
+    pip install -q pickle5
 fi
 if [ "$ARROW_TRAVIS_COVERAGE" == "1" ]; then
     export PYARROW_GENERATE_COVERAGE=1
@@ -113,17 +140,18 @@ export PYARROW_BUILD_TYPE=$ARROW_BUILD_TYPE
 export PYARROW_WITH_PARQUET=1
 export PYARROW_WITH_PLASMA=1
 export PYARROW_WITH_ORC=1
+if [ $ARROW_TRAVIS_PYTHON_GANDIVA == "1" ]; then
+  export PYARROW_WITH_GANDIVA=1
+fi
 
-python setup.py build_ext -q --inplace
+python setup.py develop
 
 # Basic sanity checks
 python -c "import pyarrow.parquet"
 python -c "import pyarrow.plasma"
 python -c "import pyarrow.orc"
 
-if [ "$ARROW_TRAVIS_VALGRIND" == "1" ]; then
-  export PLASMA_VALGRIND=1
-fi
+echo "PLASMA_VALGRIND: $PLASMA_VALGRIND"
 
 # Set up huge pages for plasma test
 if [ $TRAVIS_OS_NAME == "linux" ]; then
@@ -138,9 +166,9 @@ fi
 if [ "$ARROW_TRAVIS_COVERAGE" == "1" ]; then
     # Output Python coverage data in a persistent place
     export COVERAGE_FILE=$ARROW_PYTHON_COVERAGE_FILE
-    coverage run --append -m pytest -r sxX --durations=15 --parquet pyarrow/tests
+    coverage run --append -m pytest $PYARROW_PYTEST_FLAGS pyarrow/tests
 else
-    python -m pytest -r sxX --durations=15 --parquet pyarrow/tests
+    python -m pytest $PYARROW_PYTEST_FLAGS pyarrow/tests
 fi
 
 if [ "$ARROW_TRAVIS_COVERAGE" == "1" ]; then
@@ -152,7 +180,8 @@ if [ "$ARROW_TRAVIS_COVERAGE" == "1" ]; then
     coverage xml -i -o $TRAVIS_BUILD_DIR/coverage.xml
     # Capture C++ coverage info and combine with previous coverage file
     pushd $TRAVIS_BUILD_DIR
-    lcov --quiet --directory . --capture --no-external --output-file coverage-python-tests.info
+    lcov --quiet --directory . --capture --no-external --output-file coverage-python-tests.info \
+        2>&1 | grep -v "WARNING: no data found for /usr/include"
     lcov --add-tracefile coverage-python-tests.info \
         --add-tracefile $ARROW_CPP_COVERAGE_FILE \
         --output-file $ARROW_CPP_COVERAGE_FILE
@@ -160,25 +189,12 @@ if [ "$ARROW_TRAVIS_COVERAGE" == "1" ]; then
     popd   # $TRAVIS_BUILD_DIR
 fi
 
-popd  # $ARROW_PYTHON_DIR
-
-
 if [ "$ARROW_TRAVIS_PYTHON_DOCS" == "1" ] && [ "$PYTHON_VERSION" == "3.6" ]; then
-  # Build documentation once
-  conda install -y -q \
-        ipython \
-        matplotlib \
-        numpydoc \
-        sphinx \
-        sphinx_bootstrap_theme
-
-  pushd $ARROW_PYTHON_DIR
-  # For autodoc, make sure PyArrow is installed
-  python setup.py install -q --single-version-externally-managed --record=record.text
   cd doc
   sphinx-build -q -b html -d _build/doctrees -W source _build/html
-  popd  # $ARROW_PYTHON_DIR
 fi
+
+popd  # $ARROW_PYTHON_DIR
 
 if [ "$ARROW_TRAVIS_PYTHON_BENCHMARKS" == "1" ] && [ "$PYTHON_VERSION" == "3.6" ]; then
   # Check the ASV benchmarking setup.
@@ -186,12 +202,13 @@ if [ "$ARROW_TRAVIS_PYTHON_BENCHMARKS" == "1" ] && [ "$PYTHON_VERSION" == "3.6" 
   # (see https://github.com/airspeed-velocity/asv/issues/449)
   source deactivate
   conda create -y -q -n pyarrow_asv python=$PYTHON_VERSION
-  source activate pyarrow_asv
+  conda activate pyarrow_asv
   pip install -q git+https://github.com/pitrou/asv.git@customize_commands
 
-  export PYARROW_WITH_PARQUET=0
+  export PYARROW_WITH_PARQUET=1
   export PYARROW_WITH_PLASMA=1
   export PYARROW_WITH_ORC=0
+  export PYARROW_WITH_GANDIVA=0
 
   pushd $ARROW_PYTHON_DIR
   # Workaround for https://github.com/airspeed-velocity/asv/issues/631

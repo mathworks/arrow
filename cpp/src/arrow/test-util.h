@@ -18,7 +18,14 @@
 #ifndef ARROW_TEST_UTIL_H_
 #define ARROW_TEST_UTIL_H_
 
+#ifndef _WIN32
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -27,6 +34,7 @@
 #include <random>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -44,20 +52,29 @@
 #include "arrow/util/decimal.h"
 #include "arrow/util/logging.h"
 
-#define ASSERT_RAISES(ENUM, expr) \
-  do {                            \
-    ::arrow::Status s = (expr);   \
-    if (!s.Is##ENUM()) {          \
-      FAIL() << s.ToString();     \
-    }                             \
+static inline void sleep_for(double seconds) {
+  std::this_thread::sleep_for(
+      std::chrono::nanoseconds(static_cast<int64_t>(seconds * 1e9)));
+}
+
+#define STRINGIFY(x) #x
+
+#define ASSERT_RAISES(ENUM, expr)                                         \
+  do {                                                                    \
+    ::arrow::Status s = (expr);                                           \
+    if (!s.Is##ENUM()) {                                                  \
+      FAIL() << "Expected '" STRINGIFY(expr) "' to fail with " STRINGIFY( \
+                    ENUM) ", but got "                                    \
+             << s.ToString();                                             \
+    }                                                                     \
   } while (false)
 
-#define ASSERT_OK(expr)         \
-  do {                          \
-    ::arrow::Status s = (expr); \
-    if (!s.ok()) {              \
-      FAIL() << s.ToString();   \
-    }                           \
+#define ASSERT_OK(expr)                                               \
+  do {                                                                \
+    ::arrow::Status s = (expr);                                       \
+    if (!s.ok()) {                                                    \
+      FAIL() << "'" STRINGIFY(expr) "' failed with " << s.ToString(); \
+    }                                                                 \
   } while (false)
 
 #define ASSERT_OK_NO_THROW(expr) ASSERT_NO_THROW(ASSERT_OK(expr))
@@ -93,8 +110,6 @@ using ArrayVector = std::vector<std::shared_ptr<Array>>;
     }                                                                                  \
   } while (false)
 
-namespace test {
-
 template <typename T, typename U>
 void randint(int64_t N, T lower, T upper, std::vector<U>* out) {
   const int random_seed = 0;
@@ -114,18 +129,12 @@ void random_real(int64_t n, uint32_t seed, T min_value, T max_value,
 }
 
 template <typename T>
-std::shared_ptr<Buffer> GetBufferFromVector(const std::vector<T>& values) {
-  return std::make_shared<Buffer>(reinterpret_cast<const uint8_t*>(values.data()),
-                                  values.size() * sizeof(T));
-}
-
-template <typename T>
 inline Status CopyBufferFromVector(const std::vector<T>& values, MemoryPool* pool,
                                    std::shared_ptr<Buffer>* result) {
   int64_t nbytes = static_cast<int>(values.size()) * sizeof(T);
 
-  auto buffer = std::make_shared<PoolBuffer>(pool);
-  RETURN_NOT_OK(buffer->Resize(nbytes));
+  std::shared_ptr<Buffer> buffer;
+  RETURN_NOT_OK(AllocateBuffer(pool, nbytes, &buffer));
   auto immutable_data = reinterpret_cast<const uint8_t*>(values.data());
   std::copy(immutable_data, immutable_data + nbytes, buffer->mutable_data());
   memset(buffer->mutable_data() + nbytes, 0,
@@ -141,7 +150,7 @@ static inline Status GetBitmapFromVector(const std::vector<T>& is_valid,
   size_t length = is_valid.size();
 
   std::shared_ptr<Buffer> buffer;
-  RETURN_NOT_OK(GetEmptyBitmap(default_memory_pool(), length, &buffer));
+  RETURN_NOT_OK(AllocateEmptyBitmap(length, &buffer));
 
   uint8_t* bitmap = buffer->mutable_data();
   for (size_t i = 0; i < static_cast<size_t>(length); ++i) {
@@ -276,33 +285,42 @@ void rand_uniform_int(int64_t n, uint32_t seed, T min_value, T max_value, U* out
   std::generate(out, out + n, [&d, &gen] { return static_cast<U>(d(gen)); });
 }
 
+template <typename T, typename Enable = void>
+struct GenerateRandom {};
+
+template <typename T>
+struct GenerateRandom<T, typename std::enable_if<std::is_integral<T>::value>::type> {
+  static void Gen(int64_t length, uint32_t seed, void* out) {
+    rand_uniform_int(length, seed, std::numeric_limits<T>::min(),
+                     std::numeric_limits<T>::max(), reinterpret_cast<T*>(out));
+  }
+};
+
 static inline void random_ascii(int64_t n, uint32_t seed, uint8_t* out) {
   rand_uniform_int(n, seed, static_cast<int32_t>('A'), static_cast<int32_t>('z'), out);
 }
 
-static inline int64_t null_count(const std::vector<uint8_t>& valid_bytes) {
+static inline int64_t CountNulls(const std::vector<uint8_t>& valid_bytes) {
   return static_cast<int64_t>(std::count(valid_bytes.cbegin(), valid_bytes.cend(), '\0'));
 }
 
-Status MakeRandomInt32PoolBuffer(int64_t length, MemoryPool* pool,
-                                 std::shared_ptr<PoolBuffer>* pool_buffer,
-                                 uint32_t seed = 0) {
+template <typename T>
+Status MakeRandomBuffer(int64_t length, MemoryPool* pool,
+                        std::shared_ptr<ResizableBuffer>* out, uint32_t seed = 0) {
   DCHECK(pool);
-  auto data = std::make_shared<PoolBuffer>(pool);
-  RETURN_NOT_OK(data->Resize(length * sizeof(int32_t)));
-  test::rand_uniform_int(length, seed, 0, std::numeric_limits<int32_t>::max(),
-                         reinterpret_cast<int32_t*>(data->mutable_data()));
-  *pool_buffer = data;
+  std::shared_ptr<ResizableBuffer> result;
+  RETURN_NOT_OK(AllocateResizableBuffer(pool, sizeof(T) * length, &result));
+  GenerateRandom<T>::Gen(length, seed, result->mutable_data());
+  *out = result;
   return Status::OK();
 }
 
-Status MakeRandomBytePoolBuffer(int64_t length, MemoryPool* pool,
-                                std::shared_ptr<PoolBuffer>* pool_buffer,
-                                uint32_t seed = 0) {
-  auto bytes = std::make_shared<PoolBuffer>(pool);
-  RETURN_NOT_OK(bytes->Resize(length));
-  test::random_bytes(length, seed, bytes->mutable_data());
-  *pool_buffer = bytes;
+Status MakeRandomByteBuffer(int64_t length, MemoryPool* pool,
+                            std::shared_ptr<ResizableBuffer>* out, uint32_t seed = 0) {
+  std::shared_ptr<ResizableBuffer> result;
+  RETURN_NOT_OK(AllocateResizableBuffer(pool, length, &result));
+  random_bytes(length, seed, result->mutable_data());
+  *out = result;
   return Status::OK();
 }
 
@@ -329,11 +347,37 @@ void AssertChunkedEqual(const ChunkedArray& expected, const ChunkedArray& actual
   }
 }
 
+void AssertChunkedEqual(const ChunkedArray& actual, const ArrayVector& expected) {
+  AssertChunkedEqual(ChunkedArray(expected, actual.type()), actual);
+}
+
 void AssertBufferEqual(const Buffer& buffer, const std::vector<uint8_t>& expected) {
-  ASSERT_EQ(buffer.size(), expected.size());
+  ASSERT_EQ(buffer.size(), expected.size()) << "Mismatching buffer size";
   const uint8_t* buffer_data = buffer.data();
   for (size_t i = 0; i < expected.size(); ++i) {
     ASSERT_EQ(buffer_data[i], expected[i]);
+  }
+}
+
+void AssertBufferEqual(const Buffer& buffer, const std::string& expected) {
+  ASSERT_EQ(buffer.size(), expected.length()) << "Mismatching buffer size";
+  const uint8_t* buffer_data = buffer.data();
+  for (size_t i = 0; i < expected.size(); ++i) {
+    ASSERT_EQ(buffer_data[i], expected[i]);
+  }
+}
+
+void AssertBufferEqual(const Buffer& buffer, const Buffer& expected) {
+  ASSERT_EQ(buffer.size(), expected.size()) << "Mismatching buffer size";
+  ASSERT_TRUE(buffer.Equals(expected));
+}
+
+static inline void AssertSchemaEqual(const Schema& lhs, const Schema& rhs) {
+  if (!lhs.Equals(rhs)) {
+    std::stringstream ss;
+    ss << "left schema: " << lhs.ToString() << std::endl
+       << "right schema: " << rhs.ToString() << std::endl;
+    FAIL() << ss.str();
   }
 }
 
@@ -370,13 +414,18 @@ void AssertTablesEqual(const Table& expected, const Table& actual,
   }
 }
 
-}  // namespace test
-
-template <typename TYPE, typename C_TYPE>
+template <typename TYPE, typename C_TYPE = typename TYPE::c_type>
 void ArrayFromVector(const std::shared_ptr<DataType>& type,
                      const std::vector<bool>& is_valid, const std::vector<C_TYPE>& values,
                      std::shared_ptr<Array>* out) {
-  typename TypeTraits<TYPE>::BuilderType builder(type, default_memory_pool());
+  DCHECK_EQ(TYPE::type_id, type->id())
+      << "template parameter and concrete DataType instance don't agree";
+
+  std::unique_ptr<ArrayBuilder> builder_ptr;
+  ASSERT_OK(MakeBuilder(default_memory_pool(), type, &builder_ptr));
+  // Get the concrete builder class to access its Append() specializations
+  auto& builder = dynamic_cast<typename TypeTraits<TYPE>::BuilderType&>(*builder_ptr);
+
   for (size_t i = 0; i < values.size(); ++i) {
     if (is_valid[i]) {
       ASSERT_OK(builder.Append(values[i]));
@@ -387,20 +436,28 @@ void ArrayFromVector(const std::shared_ptr<DataType>& type,
   ASSERT_OK(builder.Finish(out));
 }
 
-template <typename TYPE, typename C_TYPE>
+template <typename TYPE, typename C_TYPE = typename TYPE::c_type>
 void ArrayFromVector(const std::shared_ptr<DataType>& type,
                      const std::vector<C_TYPE>& values, std::shared_ptr<Array>* out) {
-  typename TypeTraits<TYPE>::BuilderType builder(type, default_memory_pool());
+  DCHECK_EQ(TYPE::type_id, type->id())
+      << "template parameter and concrete DataType instance don't agree";
+
+  std::unique_ptr<ArrayBuilder> builder_ptr;
+  ASSERT_OK(MakeBuilder(default_memory_pool(), type, &builder_ptr));
+  // Get the concrete builder class to access its Append() specializations
+  auto& builder = dynamic_cast<typename TypeTraits<TYPE>::BuilderType&>(*builder_ptr);
+
   for (size_t i = 0; i < values.size(); ++i) {
     ASSERT_OK(builder.Append(values[i]));
   }
   ASSERT_OK(builder.Finish(out));
 }
 
-template <typename TYPE, typename C_TYPE>
+template <typename TYPE, typename C_TYPE = typename TYPE::c_type>
 void ArrayFromVector(const std::vector<bool>& is_valid, const std::vector<C_TYPE>& values,
                      std::shared_ptr<Array>* out) {
   typename TypeTraits<TYPE>::BuilderType builder;
+  DCHECK_EQ(is_valid.size(), values.size());
   for (size_t i = 0; i < values.size(); ++i) {
     if (is_valid[i]) {
       ASSERT_OK(builder.Append(values[i]));
@@ -411,13 +468,39 @@ void ArrayFromVector(const std::vector<bool>& is_valid, const std::vector<C_TYPE
   ASSERT_OK(builder.Finish(out));
 }
 
-template <typename TYPE, typename C_TYPE>
+template <typename TYPE, typename C_TYPE = typename TYPE::c_type>
 void ArrayFromVector(const std::vector<C_TYPE>& values, std::shared_ptr<Array>* out) {
   typename TypeTraits<TYPE>::BuilderType builder;
   for (auto& value : values) {
     ASSERT_OK(builder.Append(value));
   }
   ASSERT_OK(builder.Finish(out));
+}
+
+template <typename TYPE, typename C_TYPE = typename TYPE::c_type>
+void ChunkedArrayFromVector(const std::vector<std::vector<bool>>& is_valid,
+                            const std::vector<std::vector<C_TYPE>>& values,
+                            std::shared_ptr<ChunkedArray>* out) {
+  ArrayVector chunks;
+  DCHECK_EQ(is_valid.size(), values.size());
+  for (size_t i = 0; i < values.size(); ++i) {
+    std::shared_ptr<Array> array;
+    ArrayFromVector<TYPE, C_TYPE>(is_valid[i], values[i], &array);
+    chunks.push_back(array);
+  }
+  *out = std::make_shared<ChunkedArray>(chunks);
+}
+
+template <typename TYPE, typename C_TYPE = typename TYPE::c_type>
+void ChunkedArrayFromVector(const std::vector<std::vector<C_TYPE>>& values,
+                            std::shared_ptr<ChunkedArray>* out) {
+  ArrayVector chunks;
+  for (size_t i = 0; i < values.size(); ++i) {
+    std::shared_ptr<Array> array;
+    ArrayFromVector<TYPE, C_TYPE>(values[i], &array);
+    chunks.push_back(array);
+  }
+  *out = std::make_shared<ChunkedArray>(chunks);
 }
 
 template <class T, class Builder>
@@ -450,6 +533,53 @@ Status MakeArray(const std::vector<uint8_t>& valid_bytes, const std::vector<T>& 
       FAIL() << ss.str();                    \
     }                                        \
   } while (false)
+
+static inline void CompareBatch(const RecordBatch& left, const RecordBatch& right) {
+  if (!left.schema()->Equals(*right.schema())) {
+    FAIL() << "Left schema: " << left.schema()->ToString()
+           << "\nRight schema: " << right.schema()->ToString();
+  }
+  ASSERT_EQ(left.num_columns(), right.num_columns())
+      << left.schema()->ToString() << " result: " << right.schema()->ToString();
+  ASSERT_EQ(left.num_rows(), right.num_rows());
+  for (int i = 0; i < left.num_columns(); ++i) {
+    if (!left.column(i)->Equals(right.column(i))) {
+      std::stringstream ss;
+      ss << "Idx: " << i << " Name: " << left.column_name(i);
+      ss << std::endl << "Left: ";
+      ASSERT_OK(PrettyPrint(*left.column(i), 0, &ss));
+      ss << std::endl << "Right: ";
+      ASSERT_OK(PrettyPrint(*right.column(i), 0, &ss));
+      FAIL() << ss.str();
+    }
+  }
+}
+
+// ----------------------------------------------------------------------
+// A RecordBatchReader for serving a sequence of in-memory record batches
+
+class BatchIterator : public RecordBatchReader {
+ public:
+  BatchIterator(const std::shared_ptr<Schema>& schema,
+                const std::vector<std::shared_ptr<RecordBatch>>& batches)
+      : schema_(schema), batches_(batches), position_(0) {}
+
+  std::shared_ptr<Schema> schema() const override { return schema_; }
+
+  Status ReadNext(std::shared_ptr<RecordBatch>* out) override {
+    if (position_ >= batches_.size()) {
+      *out = nullptr;
+    } else {
+      *out = batches_[position_++];
+    }
+    return Status::OK();
+  }
+
+ private:
+  std::shared_ptr<Schema> schema_;
+  std::vector<std::shared_ptr<RecordBatch>> batches_;
+  size_t position_;
+};
 
 }  // namespace arrow
 

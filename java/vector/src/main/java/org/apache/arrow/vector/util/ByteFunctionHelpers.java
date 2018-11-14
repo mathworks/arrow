@@ -1,30 +1,26 @@
-/*******************************************************************************
-
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- ******************************************************************************/
+ */
 
 package org.apache.arrow.vector.util;
 
-import io.netty.buffer.ArrowBuf;
-import io.netty.util.internal.PlatformDependent;
-
 import org.apache.arrow.memory.BoundsChecking;
 
-import com.google.common.primitives.UnsignedLongs;
+import io.netty.buffer.ArrowBuf;
+import io.netty.util.internal.PlatformDependent;
 
 public class ByteFunctionHelpers {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ByteFunctionHelpers.class);
@@ -94,7 +90,13 @@ public class ByteFunctionHelpers {
    * @param rEnd   end offset in the buffer
    * @return 1 if left input is greater, -1 if left input is smaller, 0 otherwise
    */
-  public static final int compare(final ArrowBuf left, int lStart, int lEnd, final ArrowBuf right, int rStart, int rEnd) {
+  public static final int compare(
+      final ArrowBuf left,
+      int lStart,
+      int lEnd,
+      final ArrowBuf right,
+      int rStart,
+      int rEnd) {
     if (BoundsChecking.BOUNDS_CHECKING_ENABLED) {
       left.checkBytes(lStart, lEnd);
       right.checkBytes(rStart, rEnd);
@@ -102,7 +104,13 @@ public class ByteFunctionHelpers {
     return memcmp(left.memoryAddress(), lStart, lEnd, right.memoryAddress(), rStart, rEnd);
   }
 
-  private static final int memcmp(final long laddr, int lStart, int lEnd, final long raddr, int rStart, final int rEnd) {
+  private static final int memcmp(
+      final long laddr,
+      int lStart,
+      int lEnd,
+      final long raddr,
+      int rStart,
+      final int rEnd) {
     int lLen = lEnd - lStart;
     int rLen = rEnd - rStart;
     int n = Math.min(rLen, lLen);
@@ -113,7 +121,7 @@ public class ByteFunctionHelpers {
       long leftLong = PlatformDependent.getLong(lPos);
       long rightLong = PlatformDependent.getLong(rPos);
       if (leftLong != rightLong) {
-        return UnsignedLongs.compare(Long.reverseBytes(leftLong), Long.reverseBytes(rightLong));
+        return unsignedLongCompare(Long.reverseBytes(leftLong), Long.reverseBytes(rightLong));
       }
       lPos += 8;
       rPos += 8;
@@ -149,7 +157,13 @@ public class ByteFunctionHelpers {
    * @param rEnd   end offset in the byte array
    * @return 1 if left input is greater, -1 if left input is smaller, 0 otherwise
    */
-  public static final int compare(final ArrowBuf left, int lStart, int lEnd, final byte[] right, int rStart, final int rEnd) {
+  public static final int compare(
+      final ArrowBuf left,
+      int lStart,
+      int lEnd,
+      final byte[] right,
+      int rStart,
+      final int rEnd) {
     if (BoundsChecking.BOUNDS_CHECKING_ENABLED) {
       left.checkBytes(lStart, lEnd);
     }
@@ -157,7 +171,27 @@ public class ByteFunctionHelpers {
   }
 
 
-  private static final int memcmp(final long laddr, int lStart, int lEnd, final byte[] right, int rStart, final int rEnd) {
+  /**
+   * Compares the two specified {@code long} values, treating them as unsigned values between
+   * {@code 0} and {@code 2^64 - 1} inclusive.
+   *
+   * @param a the first unsigned {@code long} to compare
+   * @param b the second unsigned {@code long} to compare
+   * @return a negative value if {@code a} is less than {@code b}; a positive value if {@code a} is
+   *     greater than {@code b}; or zero if they are equal
+   */
+  public static int unsignedLongCompare(long a, long b) {
+    return Long.compare(a ^ Long.MIN_VALUE, b ^ Long.MIN_VALUE);
+  }
+
+
+  private static final int memcmp(
+      final long laddr,
+      int lStart,
+      int lEnd,
+      final byte[] right,
+      int rStart,
+      final int rEnd) {
     int lLen = lEnd - lStart;
     int rLen = rEnd - rStart;
     int n = Math.min(rLen, lLen);

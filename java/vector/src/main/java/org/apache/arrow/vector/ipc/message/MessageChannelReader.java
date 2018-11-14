@@ -1,13 +1,12 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,79 +17,58 @@
 
 package org.apache.arrow.vector.ipc.message;
 
+import java.io.IOException;
 
-import io.netty.buffer.ArrowBuf;
 import org.apache.arrow.flatbuf.Message;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.ipc.ReadChannel;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
+import io.netty.buffer.ArrowBuf;
 
 /**
  * Reads a sequence of messages using a ReadChannel.
  */
-public class MessageChannelReader implements MessageReader {
-
-  private ReadChannel in;
+public class MessageChannelReader implements AutoCloseable {
+  protected ReadChannel in;
+  protected BufferAllocator allocator;
 
   /**
-   * Construct from an existing ReadChannel.
+   * Construct a MessageReader to read streaming messages from an existing ReadChannel.
    *
    * @param in Channel to read messages from
+   * @param allocator BufferAllocator used to read Message body into an ArrowBuf.
    */
-  public MessageChannelReader(ReadChannel in) {
+  public MessageChannelReader(ReadChannel in, BufferAllocator allocator) {
     this.in = in;
+    this.allocator = allocator;
   }
 
   /**
-   * Read the next message from the ReadChannel.
+   * Read a message from the ReadChannel and return a MessageResult containing the Message
+   * metadata and optional message body data. Once the end-of-stream has been reached, a null
+   * value will be returned. If the message has no body, then MessageResult.getBodyBuffer()
+   * returns null.
    *
-   * @return A Message or null if ReadChannel has no more messages, indicated by message length of 0
+   * @return MessageResult or null if reached end-of-stream
    * @throws IOException
    */
-  @Override
-  public Message readNextMessage() throws IOException {
-    // Read the message size. There is an i32 little endian prefix.
-    ByteBuffer buffer = ByteBuffer.allocate(4);
-    if (in.readFully(buffer) != 4) {
+  public MessageResult readNext() throws IOException {
+
+    // Read the flatbuf message and check for end-of-stream
+    MessageMetadataResult result = MessageSerializer.readMessage(in);
+    if (result == null) {
       return null;
     }
-    int messageLength = MessageSerializer.bytesToInt(buffer.array());
-    if (messageLength == 0) {
-      return null;
+    Message message = result.getMessage();
+    ArrowBuf bodyBuffer = null;
+
+    // Read message body data if defined in message
+    if (result.messageHasBody()) {
+      int bodyLength = (int) result.getMessageBodyLength();
+      bodyBuffer = MessageSerializer.readMessageBody(in, bodyLength, allocator);
     }
 
-    buffer = ByteBuffer.allocate(messageLength);
-    if (in.readFully(buffer) != messageLength) {
-      throw new IOException(
-          "Unexpected end of stream trying to read message.");
-    }
-    buffer.rewind();
-
-    return Message.getRootAsMessage(buffer);
-  }
-
-  /**
-   * Read a message body from the ReadChannel.
-   *
-   * @param message Read message that is followed by a body of data
-   * @param allocator BufferAllocator to allocate memory for body data
-   * @return ArrowBuf containing the message body data
-   * @throws IOException
-   */
-  @Override
-  public ArrowBuf readMessageBody(Message message, BufferAllocator allocator) throws IOException {
-
-    int bodyLength = (int) message.bodyLength();
-
-    // Now read the record batch body
-    ArrowBuf buffer = allocator.buffer(bodyLength);
-    if (in.readFully(buffer, bodyLength) != bodyLength) {
-      throw new IOException("Unexpected end of input trying to read batch.");
-    }
-
-    return buffer;
+    return new MessageResult(message, bodyBuffer);
   }
 
   /**
@@ -98,7 +76,6 @@ public class MessageChannelReader implements MessageReader {
    *
    * @return number of bytes
    */
-  @Override
   public long bytesRead() {
     return in.bytesRead();
   }

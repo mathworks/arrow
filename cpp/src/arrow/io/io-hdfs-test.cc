@@ -42,7 +42,7 @@ namespace io {
 
 std::vector<uint8_t> RandomData(int64_t size) {
   std::vector<uint8_t> buffer(size);
-  test::random_bytes(size, 0, buffer.data());
+  random_bytes(size, 0, buffer.data());
   return buffer;
 }
 
@@ -68,8 +68,8 @@ class TestHadoopFileSystem : public ::testing::Test {
                         bool append = false, int buffer_size = 0, int16_t replication = 0,
                         int default_block_size = 0) {
     std::shared_ptr<HdfsOutputStream> file;
-    RETURN_NOT_OK(client_->OpenWriteable(path, append, buffer_size, replication,
-                                         default_block_size, &file));
+    RETURN_NOT_OK(client_->OpenWritable(path, append, buffer_size, replication,
+                                        default_block_size, &file));
 
     RETURN_NOT_OK(file->Write(buffer, size));
     RETURN_NOT_OK(file->Close());

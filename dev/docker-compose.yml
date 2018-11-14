@@ -16,25 +16,50 @@
 
 version: '3'
 services:
-  gen_apidocs:
-    build:
-      context: gen_apidocs
-    volumes:
-     - ../..:/apache-arrow
-  run_site:
-    build:
-      context: run_site
+
+  impala:
+    image: cpcloud86/impala:java8-1
     ports:
-    - "4000:4000"
+      - "21050"
+    hostname: impala
+
+  hiveserver2:
+    links:
+      - impala
+    build:
+      context: hiveserver2
     volumes:
-     - ../..:/apache-arrow
+      - ../..:/apache-arrow
+
+  spark_integration:
+    build:
+      context: spark_integration
+    volumes:
+      - ../..:/apache-arrow
+
   dask_integration:
     build:
       context: dask_integration
     volumes:
-     - ../..:/apache-arrow
-  spark_integration:
-    build: 
-      context: spark_integration
+      - ../..:/apache-arrow
+
+  gen_apidocs:
+    build:
+      context: ..
+      dockerfile: dev/gen_apidocs/Dockerfile
+    volumes:
+     - ..:/arrow
+
+  iwyu:
+    build:
+      context: iwyu
     volumes:
      - ../..:/apache-arrow
+
+  run_site:
+    build:
+      context: run_site
+    ports:
+      - "4000:4000"
+    volumes:
+      - ../..:/apache-arrow

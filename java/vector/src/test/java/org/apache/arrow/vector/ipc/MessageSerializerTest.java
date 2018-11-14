@@ -1,13 +1,12 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,18 +25,19 @@ import static org.junit.Assert.assertTrue;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.Channels;
 import java.util.Collections;
 import java.util.List;
 
-import io.netty.buffer.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
-import org.apache.arrow.vector.ipc.message.MessageSerializer;
 import org.apache.arrow.vector.ipc.message.ArrowBlock;
 import org.apache.arrow.vector.ipc.message.ArrowFieldNode;
 import org.apache.arrow.vector.ipc.message.ArrowMessage;
 import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
+import org.apache.arrow.vector.ipc.message.MessageSerializer;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.DictionaryEncoding;
 import org.apache.arrow.vector.types.pojo.Field;
@@ -46,6 +46,8 @@ import org.apache.arrow.vector.types.pojo.Schema;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
+
+import io.netty.buffer.ArrowBuf;
 
 public class MessageSerializerTest {
 
@@ -59,6 +61,57 @@ public class MessageSerializerTest {
     byte[] bytes = new byte[buf.readableBytes()];
     buf.readBytes(bytes);
     return bytes;
+  }
+
+  private int intToByteRoundtrip(int v, byte[] bytes) {
+    MessageSerializer.intToBytes(v, bytes);
+    return MessageSerializer.bytesToInt(bytes);
+  }
+
+  @Test
+  public void testIntToBytes() {
+    byte[] bytes = new byte[4];
+    int[] values = new int[] {1, 15, 1 << 8, 1 << 16, 1 << 32, Integer.MAX_VALUE};
+    for (int v: values) {
+      assertEquals(intToByteRoundtrip(v, bytes), v);
+    }
+  }
+
+  @Test
+  public void testWriteMessageBufferAligned() throws IOException {
+    ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+    WriteChannel out = new WriteChannel(Channels.newChannel(outputStream));
+
+    // This is not a valid Arrow Message, only to test writing and alignment
+    ByteBuffer buffer = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
+    buffer.putInt(1);
+    buffer.putInt(2);
+    buffer.flip();
+
+    int bytesWritten = MessageSerializer.writeMessageBuffer(out, 8, buffer);
+    assertEquals(16, bytesWritten);
+
+    buffer.rewind();
+    buffer.putInt(3);
+    buffer.flip();
+    bytesWritten = MessageSerializer.writeMessageBuffer(out, 4, buffer);
+    assertEquals(8, bytesWritten);
+
+    ByteArrayInputStream inputStream = new ByteArrayInputStream(outputStream.toByteArray());
+    ReadChannel in = new ReadChannel(Channels.newChannel(inputStream));
+    ByteBuffer result = ByteBuffer.allocate(32).order(ByteOrder.LITTLE_ENDIAN);
+    in.readFully(result);
+    result.rewind();
+
+    // First message size, 2 int values, 4 bytes of zero padding
+    assertEquals(12, result.getInt());
+    assertEquals(1, result.getInt());
+    assertEquals(2, result.getInt());
+    assertEquals(0, result.getInt());
+
+    // Second message size and 1 int value
+    assertEquals(4, result.getInt());
+    assertEquals(3, result.getInt());
   }
 
   @Test

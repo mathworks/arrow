@@ -1,13 +1,12 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -39,7 +38,8 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 
 /**
- * A simplified byte wrapper similar to Hadoop's Text class without all the dependencies. Lifted from Hadoop 2.7.1
+ * A simplified byte wrapper similar to Hadoop's Text class without all the dependencies.
+ * Lifted from Hadoop 2.7.1
  */
 @JsonSerialize(using = Text.TextSerializer.class)
 public class Text {
@@ -48,9 +48,9 @@ public class Text {
       new ThreadLocal<CharsetEncoder>() {
         @Override
         protected CharsetEncoder initialValue() {
-          return Charset.forName("UTF-8").newEncoder().
-              onMalformedInput(CodingErrorAction.REPORT).
-              onUnmappableCharacter(CodingErrorAction.REPORT);
+          return Charset.forName("UTF-8").newEncoder()
+              .onMalformedInput(CodingErrorAction.REPORT)
+              .onUnmappableCharacter(CodingErrorAction.REPORT);
         }
       };
 
@@ -58,9 +58,9 @@ public class Text {
       new ThreadLocal<CharsetDecoder>() {
         @Override
         protected CharsetDecoder initialValue() {
-          return Charset.forName("UTF-8").newDecoder().
-              onMalformedInput(CodingErrorAction.REPORT).
-              onUnmappableCharacter(CodingErrorAction.REPORT);
+          return Charset.forName("UTF-8").newDecoder()
+              .onMalformedInput(CodingErrorAction.REPORT)
+              .onUnmappableCharacter(CodingErrorAction.REPORT);
         }
       };
 
@@ -101,8 +101,8 @@ public class Text {
   }
 
   /**
-   * Get a copy of the bytes that is exactly the length of the data. See {@link #getBytes()} for faster access to the
-   * underlying array.
+   * Get a copy of the bytes that is exactly the length of the data. See {@link #getBytes()} for
+   * faster access to the underlying array.
    *
    * @return a copy of the underlying array
    */
@@ -113,8 +113,8 @@ public class Text {
   }
 
   /**
-   * Returns the raw bytes; however, only data up to {@link #getLength()} is valid. Please use {@link #copyBytes()} if
-   * you need the returned array to be precisely the length of the data.
+   * Returns the raw bytes; however, only data up to {@link #getLength()} is valid. Please use
+   * {@link #copyBytes()} if you need the returned array to be precisely the length of the data.
    *
    * @return the underlying array
    */
@@ -130,11 +130,13 @@ public class Text {
   }
 
   /**
-   * Returns the Unicode Scalar Value (32-bit integer value) for the character at <code>position</code>. Note that this
-   * method avoids using the converter or doing String instantiation
+   * Returns the Unicode Scalar Value (32-bit integer value) for the character at
+   * <code>position</code>. Note that this method avoids using the converter or doing String
+   * instantiation
    *
    * @param position the index of the char we want to retrieve
-   * @return the Unicode scalar value at position or -1 if the position is invalid or points to a trailing byte
+   * @return the Unicode scalar value at position or -1 if the position is invalid or points to a
+   * trailing byte
    */
   public int charAt(int position) {
     if (position > this.length) {
@@ -153,13 +155,15 @@ public class Text {
   }
 
   /**
-   * Finds any occurrence of <code>what</code> in the backing buffer, starting as position <code>start</code>. The
-   * starting position is measured in bytes and the return value is in terms of byte position in the buffer. The backing
-   * buffer is not converted to a string for this operation.
+   * Finds any occurrence of <code>what</code> in the backing buffer, starting as position
+   * <code>start</code>. The starting position is measured in bytes and the return value is in terms
+   * of byte position in the buffer. The backing buffer is not converted to a string for this
+   * operation.
    *
    * @param what  the string to search for
    * @param start where to start from
-   * @return byte position of the first occurrence of the search string in the UTF-8 buffer or -1 if not found
+   * @return byte position of the first occurrence of the search string in the UTF-8 buffer or -1
+   * if not found
    */
   public int find(String what, int start) {
     try {
@@ -263,18 +267,19 @@ public class Text {
   /**
    * Clear the string to empty.
    *
-   * <em>Note</em>: For performance reasons, this call does not clear the underlying byte array that is retrievable via
-   * {@link #getBytes()}. In order to free the byte-array memory, call {@link #set(byte[])} with an empty byte array
-   * (For example, <code>new byte[0]</code>).
+   * <em>Note</em>: For performance reasons, this call does not clear the underlying byte array that
+   * is retrievable via {@link #getBytes()}. In order to free the byte-array memory, call
+   * {@link #set(byte[])} with an empty byte array (For example, <code>new byte[0]</code>).
    */
   public void clear() {
     length = 0;
   }
 
   /**
-   * Sets the capacity of this Text object to <em>at least</em> <code>len</code> bytes. If the current buffer is longer,
-   * then the capacity and existing content of the buffer are unchanged. If <code>len</code> is larger than the current
-   * capacity, the Text object's capacity is increased to match.
+   * Sets the capacity of this Text object to <em>at least</em> <code>len</code> bytes. If the
+   * current buffer is longer, then the capacity and existing content of the buffer are unchanged.
+   * If <code>len</code> is larger than the current capacity, the Text object's capacity is
+   * increased to match.
    *
    * @param len      the number of bytes we need
    * @param keepData should the old data be kept
@@ -299,8 +304,8 @@ public class Text {
   }
 
   /**
-   * Read a Text object whose length is already known. This allows creating Text from a stream which uses a different
-   * serialization format.
+   * Read a Text object whose length is already known. This allows creating Text from a stream which
+   * uses a different serialization format.
    *
    * @param in  the input to initialize from
    * @param len how many bytes to read from in
@@ -360,8 +365,8 @@ public class Text {
   // / STATIC UTILITIES FROM HERE DOWN
 
   /**
-   * Converts the provided byte array to a String using the UTF-8 encoding. If the input is malformed, replace by a
-   * default value.
+   * Converts the provided byte array to a String using the UTF-8 encoding. If the input is
+   * malformed, replace by a default value.
    *
    * @param utf8 bytes to decode
    * @return the decoded string
@@ -377,9 +382,9 @@ public class Text {
   }
 
   /**
-   * Converts the provided byte array to a String using the UTF-8 encoding. If <code>replace</code> is true, then
-   * malformed input is replaced with the substitution character, which is U+FFFD. Otherwise the method throws a
-   * MalformedInputException.
+   * Converts the provided byte array to a String using the UTF-8 encoding. If <code>replace</code>
+   * is true, then malformed input is replaced with the substitution character, which is U+FFFD.
+   * Otherwise the method throws a MalformedInputException.
    *
    * @param utf8    the bytes to decode
    * @param start   where to start from
@@ -411,8 +416,8 @@ public class Text {
   }
 
   /**
-   * Converts the provided String to bytes using the UTF-8 encoding. If the input is malformed, invalid chars are
-   * replaced by a default value.
+   * Converts the provided String to bytes using the UTF-8 encoding. If the input is malformed,
+   * invalid chars are replaced by a default value.
    *
    * @param string the string to encode
    * @return ByteBuffer: bytes stores at ByteBuffer.array() and length is ByteBuffer.limit()
@@ -424,9 +429,9 @@ public class Text {
   }
 
   /**
-   * Converts the provided String to bytes using the UTF-8 encoding. If <code>replace</code> is true, then malformed
-   * input is replaced with the substitution character, which is U+FFFD. Otherwise the method throws a
-   * MalformedInputException.
+   * Converts the provided String to bytes using the UTF-8 encoding. If <code>replace</code> is
+   * true, then malformed input is replaced with the substitution character, which is U+FFFD.
+   * Otherwise the method throws a MalformedInputException.
    *
    * @param string  the string to encode
    * @param replace whether to replace malformed characters with U+FFFD
@@ -449,7 +454,7 @@ public class Text {
     return bytes;
   }
 
-  static final public int DEFAULT_MAX_LEN = 1024 * 1024;
+  public static final int DEFAULT_MAX_LEN = 1024 * 1024;
 
   // //// states for validateUTF8
 
@@ -554,9 +559,9 @@ public class Text {
   }
 
   /**
-   * Magic numbers for UTF-8. These are the number of bytes that <em>follow</em> a given lead byte. Trailing bytes have
-   * the value -1. The values 4 and 5 are presented in this table, even though valid UTF-8 cannot include the five and
-   * six byte sequences.
+   * Magic numbers for UTF-8. These are the number of bytes that <em>follow</em> a given lead byte.
+   * Trailing bytes have the value -1. The values 4 and 5 are presented in this table, even though
+   * valid UTF-8 cannot include the five and six byte sequences.
    */
   static final int[] bytesFromUTF8 =
       {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -576,8 +581,8 @@ public class Text {
           3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5};
 
   /**
-   * Returns the next code point at the current position in the buffer. The buffer's position will be incremented. Any
-   * mark set on this buffer will be changed by this method!
+   * Returns the next code point at the current position in the buffer. The buffer's position will
+   * be incremented. Any mark set on this buffer will be changed by this method!
    *
    * @param bytes the incoming bytes
    * @return the corresponding unicode codepoint
@@ -596,29 +601,35 @@ public class Text {
       case 5:
         ch += (bytes.get() & 0xFF);
         ch <<= 6; /* remember, illegal UTF-8 */
+        // fall through
       case 4:
         ch += (bytes.get() & 0xFF);
         ch <<= 6; /* remember, illegal UTF-8 */
+        // fall through
       case 3:
         ch += (bytes.get() & 0xFF);
         ch <<= 6;
+        // fall through
       case 2:
         ch += (bytes.get() & 0xFF);
         ch <<= 6;
+        // fall through
       case 1:
         ch += (bytes.get() & 0xFF);
         ch <<= 6;
+        // fall through
       case 0:
         ch += (bytes.get() & 0xFF);
+        break;
+      default:  // do nothing
     }
     ch -= offsetsFromUTF8[extraBytesToRead];
 
     return ch;
   }
 
-  static final int offsetsFromUTF8[] =
-      {0x00000000, 0x00003080,
-          0x000E2080, 0x03C82080, 0xFA082080, 0x82082080};
+  static final int[] offsetsFromUTF8 =
+      {0x00000000, 0x00003080, 0x000E2080, 0x03C82080, 0xFA082080, 0x82082080};
 
   /**
    * For the given string, returns the number of UTF-8 bytes required to encode the string.
@@ -662,8 +673,10 @@ public class Text {
     }
 
     @Override
-    public void serialize(Text text, JsonGenerator jsonGenerator, SerializerProvider serializerProvider)
-        throws IOException, JsonGenerationException {
+    public void serialize(
+        Text text,
+        JsonGenerator jsonGenerator,
+        SerializerProvider serializerProvider) throws IOException, JsonGenerationException {
       jsonGenerator.writeString(text.toString());
     }
   }

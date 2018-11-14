@@ -16,21 +16,21 @@
 // under the License.
 
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <sstream>
+#include <string>
 #include <vector>
 
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
 
 #include "arrow/array.h"
 #include "arrow/builder.h"
+#include "arrow/memory_pool.h"
 #include "arrow/pretty_print.h"
+#include "arrow/table.h"
 #include "arrow/test-util.h"
 #include "arrow/type.h"
-#include "arrow/type_traits.h"
 #include "arrow/util/decimal.h"
 
 namespace arrow {
@@ -45,15 +45,24 @@ class TestPrettyPrint : public ::testing::Test {
   std::ostringstream sink_;
 };
 
-void CheckArray(const Array& arr, int indent, const char* expected) {
+template <typename T>
+void CheckStream(const T& obj, const PrettyPrintOptions& options, const char* expected) {
   std::ostringstream sink;
-  ASSERT_OK(PrettyPrint(arr, indent, &sink));
+  ASSERT_OK(PrettyPrint(obj, options, &sink));
   std::string result = sink.str();
   ASSERT_EQ(std::string(expected, strlen(expected)), result);
+}
 
-  std::stringstream ss;
-  ss << arr;
-  ASSERT_EQ(result, ss.str());
+void CheckArray(const Array& arr, const PrettyPrintOptions& options, const char* expected,
+                bool check_operator = true) {
+  CheckStream(arr, options, expected);
+
+  if (options.indent == 0 && check_operator) {
+    std::stringstream ss;
+    ss << arr;
+    std::string result = std::string(expected, strlen(expected));
+    ASSERT_EQ(result, ss.str());
+  }
 }
 
 template <typename T>
@@ -64,36 +73,252 @@ void Check(const T& obj, const PrettyPrintOptions& options, const char* expected
 }
 
 template <typename TYPE, typename C_TYPE>
-void CheckPrimitive(int indent, const std::vector<bool>& is_valid,
-                    const std::vector<C_TYPE>& values, const char* expected) {
+void CheckPrimitive(const PrettyPrintOptions& options, const std::vector<bool>& is_valid,
+                    const std::vector<C_TYPE>& values, const char* expected,
+                    bool check_operator = true) {
   std::shared_ptr<Array> array;
   ArrayFromVector<TYPE, C_TYPE>(is_valid, values, &array);
-  CheckArray(*array, indent, expected);
+  CheckArray(*array, options, expected, check_operator);
 }
 
 TEST_F(TestPrettyPrint, PrimitiveType) {
   std::vector<bool> is_valid = {true, true, false, true, false};
 
   std::vector<int32_t> values = {0, 1, 2, 3, 4};
-  static const char* expected = R"expected([0, 1, null, 3, null])expected";
-  CheckPrimitive<Int32Type, int32_t>(0, is_valid, values, expected);
+  static const char* expected = R"expected([
+  0,
+  1,
+  null,
+  3,
+  null
+])expected";
+  CheckPrimitive<Int32Type, int32_t>({0, 10}, is_valid, values, expected);
 
-  std::vector<std::string> values2 = {"foo", "bar", "", "baz", ""};
-  static const char* ex2 = R"expected(["foo", "bar", null, "baz", null])expected";
-  CheckPrimitive<StringType, std::string>(0, is_valid, values2, ex2);
+  static const char* expected_na = R"expected([
+  0,
+  1,
+  NA,
+  3,
+  NA
+])expected";
+  CheckPrimitive<Int32Type, int32_t>({0, 10, 2, "NA"}, is_valid, values, expected_na,
+                                     false);
+
+  static const char* ex_in2 = R"expected(  [
+    0,
+    1,
+    null,
+    3,
+    null
+  ])expected";
+  CheckPrimitive<Int32Type, int32_t>({2, 10}, is_valid, values, ex_in2);
+  static const char* ex_in2_w2 = R"expected(  [
+    0,
+    1,
+    ...
+    3,
+    null
+  ])expected";
+  CheckPrimitive<Int32Type, int32_t>({2, 2}, is_valid, values, ex_in2_w2);
+
+  std::vector<double> values2 = {0., 1., 2., 3., 4.};
+  static const char* ex2 = R"expected([
+  0,
+  1,
+  null,
+  3,
+  null
+])expected";
+  CheckPrimitive<DoubleType, double>({0, 10}, is_valid, values2, ex2);
+  static const char* ex2_in2 = R"expected(  [
+    0,
+    1,
+    null,
+    3,
+    null
+  ])expected";
+  CheckPrimitive<DoubleType, double>({2, 10}, is_valid, values2, ex2_in2);
+
+  std::vector<std::string> values3 = {"foo", "bar", "", "baz", ""};
+  static const char* ex3 = R"expected([
+  "foo",
+  "bar",
+  null,
+  "baz",
+  null
+])expected";
+  CheckPrimitive<StringType, std::string>({0, 10}, is_valid, values3, ex3);
+  static const char* ex3_in2 = R"expected(  [
+    "foo",
+    "bar",
+    null,
+    "baz",
+    null
+  ])expected";
+  CheckPrimitive<StringType, std::string>({2, 10}, is_valid, values3, ex3_in2);
+}
+
+TEST_F(TestPrettyPrint, StructTypeBasic) {
+  auto simple_1 = field("one", int32());
+  auto simple_2 = field("two", int32());
+  auto simple_struct = struct_({simple_1, simple_2});
+
+  auto int_builder_1 = std::make_shared<Int32Builder>();
+  auto int_builder_2 = std::make_shared<Int32Builder>();
+  StructBuilder builder(simple_struct, default_memory_pool(),
+                        {int_builder_1, int_builder_2});
+  ASSERT_OK(builder.Append());
+  ASSERT_OK(int_builder_1->Append(11));
+  ASSERT_OK(int_builder_2->Append(22));
+
+  std::shared_ptr<Array> array;
+  ASSERT_OK(builder.Finish(&array));
+
+  static const char* ex = R"expected(-- is_valid: all not null
+-- child 0 type: int32
+  [
+    11
+  ]
+-- child 1 type: int32
+  [
+    22
+  ])expected";
+  CheckStream(*array, {0, 10}, ex);
+
+  static const char* ex_2 = R"expected(  -- is_valid: all not null
+  -- child 0 type: int32
+    [
+      11
+    ]
+  -- child 1 type: int32
+    [
+      22
+    ])expected";
+  CheckStream(*array, {2, 10}, ex_2);
+}
+
+TEST_F(TestPrettyPrint, StructTypeAdvanced) {
+  auto simple_1 = field("one", int32());
+  auto simple_2 = field("two", int32());
+  auto simple_struct = struct_({simple_1, simple_2});
+
+  auto int_builder_1 = std::make_shared<Int32Builder>();
+  auto int_builder_2 = std::make_shared<Int32Builder>();
+  StructBuilder builder(simple_struct, default_memory_pool(),
+                        {int_builder_1, int_builder_2});
+  ASSERT_OK(builder.Append());
+  ASSERT_OK(int_builder_1->Append(11));
+  ASSERT_OK(int_builder_2->Append(22));
+  ASSERT_OK(builder.AppendNull());
+  ASSERT_OK(int_builder_1->AppendNull());
+  ASSERT_OK(int_builder_2->AppendNull());
+  ASSERT_OK(builder.Append());
+  ASSERT_OK(int_builder_1->AppendNull());
+  ASSERT_OK(int_builder_2->Append(33));
+
+  std::shared_ptr<Array> array;
+  ASSERT_OK(builder.Finish(&array));
+
+  static const char* ex = R"expected(-- is_valid:
+  [
+    true,
+    false,
+    true
+  ]
+-- child 0 type: int32
+  [
+    11,
+    null,
+    null
+  ]
+-- child 1 type: int32
+  [
+    22,
+    null,
+    33
+  ])expected";
+  CheckStream(*array, {0, 10}, ex);
 }
 
 TEST_F(TestPrettyPrint, BinaryType) {
   std::vector<bool> is_valid = {true, true, false, true, false};
   std::vector<std::string> values = {"foo", "bar", "", "baz", ""};
-  static const char* ex = R"expected([666F6F, 626172, null, 62617A, null])expected";
-  CheckPrimitive<BinaryType, std::string>(0, is_valid, values, ex);
+  static const char* ex = "[\n  666F6F,\n  626172,\n  null,\n  62617A,\n  null\n]";
+  CheckPrimitive<BinaryType, std::string>({0}, is_valid, values, ex);
+  static const char* ex_in2 =
+      "  [\n    666F6F,\n    626172,\n    null,\n    62617A,\n    null\n  ]";
+  CheckPrimitive<BinaryType, std::string>({2}, is_valid, values, ex_in2);
+}
+
+TEST_F(TestPrettyPrint, ListType) {
+  Int64Builder* int_builder = new Int64Builder();
+  ListBuilder list_builder(default_memory_pool(),
+                           std::unique_ptr<ArrayBuilder>(int_builder));
+
+  ASSERT_OK(list_builder.Append());
+  ASSERT_OK(int_builder->AppendNull());
+  ASSERT_OK(list_builder.Append());
+  ASSERT_OK(list_builder.Append(false));
+  ASSERT_OK(list_builder.Append());
+  ASSERT_OK(int_builder->Append(4));
+  ASSERT_OK(int_builder->Append(6));
+  ASSERT_OK(int_builder->Append(7));
+  ASSERT_OK(list_builder.Append());
+  ASSERT_OK(int_builder->Append(2));
+  ASSERT_OK(int_builder->Append(3));
+
+  std::shared_ptr<Array> array;
+  ASSERT_OK(list_builder.Finish(&array));
+  static const char* ex = R"expected([
+  [
+    null
+  ],
+  [],
+  null,
+  [
+    4,
+    6,
+    7
+  ],
+  [
+    2,
+    3
+  ]
+])expected";
+  CheckArray(*array, {0, 10}, ex);
+  static const char* ex_2 = R"expected(  [
+    [
+      null
+    ],
+    [],
+    null,
+    [
+      4,
+      6,
+      7
+    ],
+    [
+      2,
+      3
+    ]
+  ])expected";
+  CheckArray(*array, {2, 10}, ex_2);
+  static const char* ex_3 = R"expected([
+  [
+    null
+  ],
+  ...
+  [
+    2,
+    3
+  ]
+])expected";
+  CheckStream(*array, {0, 1}, ex_3);
 }
 
 TEST_F(TestPrettyPrint, FixedSizeBinaryType) {
   std::vector<bool> is_valid = {true, true, false, true, false};
   std::vector<std::string> values = {"foo", "bar", "baz"};
-  static const char* ex = R"expected([666F6F, 626172, 62617A])expected";
 
   std::shared_ptr<Array> array;
   auto type = fixed_size_binary(3);
@@ -104,7 +329,10 @@ TEST_F(TestPrettyPrint, FixedSizeBinaryType) {
   ASSERT_OK(builder.Append(values[2]));
   ASSERT_OK(builder.Finish(&array));
 
-  CheckArray(*array, 0, ex);
+  static const char* ex = "[\n  666F6F,\n  626172,\n  62617A\n]";
+  CheckArray(*array, {0, 10}, ex);
+  static const char* ex_2 = "  [\n    666F6F,\n    ...\n    62617A\n  ]";
+  CheckArray(*array, {2, 1}, ex_2);
 }
 
 TEST_F(TestPrettyPrint, Decimal128Type) {
@@ -126,8 +354,8 @@ TEST_F(TestPrettyPrint, Decimal128Type) {
   std::shared_ptr<Array> array;
   ASSERT_OK(builder.Finish(&array));
 
-  static const char* ex = R"expected([123.4567, 456.7891, null])expected";
-  CheckArray(*array, 0, ex);
+  static const char* ex = "[\n  123.4567,\n  456.7891,\n  null\n]";
+  CheckArray(*array, {0}, ex);
 }
 
 TEST_F(TestPrettyPrint, DictionaryType) {
@@ -144,11 +372,133 @@ TEST_F(TestPrettyPrint, DictionaryType) {
   auto arr = std::make_shared<DictionaryArray>(dict_type, indices);
 
   static const char* expected = R"expected(
--- is_valid: [true, true, false, true, true, true]
--- dictionary: ["foo", "bar", "baz"]
--- indices: [1, 2, null, 0, 2, 0])expected";
+-- dictionary:
+  [
+    "foo",
+    "bar",
+    "baz"
+  ]
+-- indices:
+  [
+    1,
+    2,
+    null,
+    0,
+    2,
+    0
+  ])expected";
 
-  CheckArray(*arr, 0, expected);
+  CheckArray(*arr, {0}, expected);
+}
+
+TEST_F(TestPrettyPrint, ChunkedArrayPrimitiveType) {
+  std::vector<bool> is_valid = {true, true, false, true, false};
+  std::vector<int32_t> values = {0, 1, 2, 3, 4};
+  std::shared_ptr<Array> array;
+  ArrayFromVector<Int32Type, int32_t>(is_valid, values, &array);
+  ChunkedArray chunked_array({array});
+
+  static const char* expected = R"expected([
+  [
+    0,
+    1,
+    null,
+    3,
+    null
+  ]
+])expected";
+  CheckStream(chunked_array, {0}, expected);
+
+  ChunkedArray chunked_array_2({array, array});
+
+  static const char* expected_2 = R"expected([
+  [
+    0,
+    1,
+    null,
+    3,
+    null
+  ],
+  [
+    0,
+    1,
+    null,
+    3,
+    null
+  ]
+])expected";
+
+  CheckStream(chunked_array_2, {0}, expected_2);
+}
+
+TEST_F(TestPrettyPrint, ColumnPrimitiveType) {
+  std::vector<bool> is_valid = {true, true, false, true, false};
+  std::vector<int32_t> values = {0, 1, 2, 3, 4};
+  std::shared_ptr<Array> array;
+  ArrayFromVector<Int32Type, int32_t>(is_valid, values, &array);
+  std::shared_ptr<Field> int_field = field("column", int32());
+  Column column(int_field, ArrayVector({array}));
+
+  static const char* expected = R"expected(column: int32
+[
+  [
+    0,
+    1,
+    null,
+    3,
+    null
+  ]
+])expected";
+  CheckStream(column, {0}, expected);
+
+  Column column_2(int_field, {array, array});
+
+  static const char* expected_2 = R"expected(column: int32
+[
+  [
+    0,
+    1,
+    null,
+    3,
+    null
+  ],
+  [
+    0,
+    1,
+    null,
+    3,
+    null
+  ]
+])expected";
+
+  CheckStream(column_2, {0}, expected_2);
+}
+
+TEST_F(TestPrettyPrint, TablePrimitive) {
+  std::vector<bool> is_valid = {true, true, false, true, false};
+  std::vector<int32_t> values = {0, 1, 2, 3, 4};
+  std::shared_ptr<Array> array;
+  ArrayFromVector<Int32Type, int32_t>(is_valid, values, &array);
+  std::shared_ptr<Field> int_field = field("column", int32());
+  std::shared_ptr<Column> column =
+      std::make_shared<Column>(int_field, ArrayVector({array}));
+  std::shared_ptr<Schema> table_schema = schema({int_field});
+  std::shared_ptr<Table> table = Table::Make(table_schema, {column});
+
+  static const char* expected = R"expected(column: int32
+----
+column:
+  [
+    [
+      0,
+      1,
+      null,
+      3,
+      null
+    ]
+  ]
+)expected";
+  CheckStream(*table, {0}, expected);
 }
 
 TEST_F(TestPrettyPrint, SchemaWithDictionary) {
@@ -168,14 +518,29 @@ TEST_F(TestPrettyPrint, SchemaWithDictionary) {
 
   static const char* expected = R"expected(one: int32
 two: dictionary<values=string, indices=int16, ordered=0>
-  dictionary: ["foo", "bar", "baz"]
+  dictionary:
+    [
+      "foo",
+      "bar",
+      "baz"
+    ]
 three: list<two: dictionary<values=string, indices=int16, ordered=0>>
   child 0, two: dictionary<values=string, indices=int16, ordered=0>
-      dictionary: ["foo", "bar", "baz"]
+    dictionary:
+      [
+        "foo",
+        "bar",
+        "baz"
+      ]
 four: struct<one: int32, two: dictionary<values=string, indices=int16, ordered=0>>
   child 0, one: int32
   child 1, two: dictionary<values=string, indices=int16, ordered=0>
-      dictionary: ["foo", "bar", "baz"])expected";
+    dictionary:
+      [
+        "foo",
+        "bar",
+        "baz"
+      ])expected";
 
   PrettyPrintOptions options{0};
 

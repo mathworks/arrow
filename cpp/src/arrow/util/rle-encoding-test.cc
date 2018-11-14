@@ -33,6 +33,7 @@
 using std::vector;
 
 namespace arrow {
+namespace util {
 
 const int MAX_WIDTH = 32;
 
@@ -40,7 +41,7 @@ TEST(BitArray, TestBool) {
   const int len = 8;
   uint8_t buffer[len];
 
-  BitWriter writer(buffer, len);
+  BitUtil::BitWriter writer(buffer, len);
 
   // Write alternating 0's and 1's
   for (int i = 0; i < 8; ++i) {
@@ -73,7 +74,7 @@ TEST(BitArray, TestBool) {
   EXPECT_EQ((int)buffer[1], BOOST_BINARY(1 1 0 0 1 1 0 0));
 
   // Use the reader and validate
-  BitReader reader(buffer, len);
+  BitUtil::BitReader reader(buffer, len);
   for (int i = 0; i < 8; ++i) {
     bool val = false;
     bool result = reader.GetValue(1, &val);
@@ -101,12 +102,12 @@ TEST(BitArray, TestBool) {
 
 // Writes 'num_vals' values with width 'bit_width' and reads them back.
 void TestBitArrayValues(int bit_width, int num_vals) {
-  int len = static_cast<int>(BitUtil::Ceil(bit_width * num_vals, 8));
+  int len = static_cast<int>(BitUtil::BytesForBits(bit_width * num_vals));
   EXPECT_GT(len, 0);
   const uint64_t mod = bit_width == 64 ? 1 : 1LL << bit_width;
 
   std::vector<uint8_t> buffer(len);
-  BitWriter writer(buffer.data(), len);
+  BitUtil::BitWriter writer(buffer.data(), len);
   for (int i = 0; i < num_vals; ++i) {
     bool result = writer.PutValue(i % mod, bit_width);
     EXPECT_TRUE(result);
@@ -114,7 +115,7 @@ void TestBitArrayValues(int bit_width, int num_vals) {
   writer.Flush();
   EXPECT_EQ(writer.bytes_written(), len);
 
-  BitReader reader(buffer.data(), len);
+  BitUtil::BitReader reader(buffer.data(), len);
   for (int i = 0; i < num_vals; ++i) {
     int64_t val = 0;
     bool result = reader.GetValue(bit_width, &val);
@@ -140,7 +141,7 @@ TEST(BitArray, TestMixed) {
   uint8_t buffer[len];
   bool parity = true;
 
-  BitWriter writer(buffer, len);
+  BitUtil::BitWriter writer(buffer, len);
   for (int i = 0; i < len; ++i) {
     bool result;
     if (i % 2 == 0) {
@@ -154,7 +155,7 @@ TEST(BitArray, TestMixed) {
   writer.Flush();
 
   parity = true;
-  BitReader reader(buffer, len);
+  BitUtil::BitReader reader(buffer, len);
   for (int i = 0; i < len; ++i) {
     bool result;
     if (i % 2 == 0) {
@@ -281,14 +282,15 @@ TEST(Rle, SpecificSequences) {
   }
 
   for (int width = 9; width <= MAX_WIDTH; ++width) {
-    ValidateRle(values, width, NULL, 2 * (1 + static_cast<int>(BitUtil::Ceil(width, 8))));
+    ValidateRle(values, width, NULL,
+                2 * (1 + static_cast<int>(BitUtil::CeilDiv(width, 8))));
   }
 
   // Test 100 0's and 1's alternating
   for (int i = 0; i < 100; ++i) {
     values[i] = i % 2;
   }
-  int num_groups = static_cast<int>(BitUtil::Ceil(100, 8));
+  int num_groups = static_cast<int>(BitUtil::CeilDiv(100, 8));
   expected_buffer[0] = static_cast<uint8_t>((num_groups << 1) | 1);
   for (int i = 1; i <= 100 / 8; ++i) {
     expected_buffer[i] = BOOST_BINARY(1 0 1 0 1 0 1 0);
@@ -299,9 +301,9 @@ TEST(Rle, SpecificSequences) {
   // num_groups and expected_buffer only valid for bit width = 1
   ValidateRle(values, 1, expected_buffer, 1 + num_groups);
   for (int width = 2; width <= MAX_WIDTH; ++width) {
-    int num_values = static_cast<int>(BitUtil::Ceil(100, 8)) * 8;
+    int num_values = static_cast<int>(BitUtil::CeilDiv(100, 8)) * 8;
     ValidateRle(values, width, NULL,
-                1 + static_cast<int>(BitUtil::Ceil(width * num_values, 8)));
+                1 + static_cast<int>(BitUtil::CeilDiv(width * num_values, 8)));
   }
 }
 
@@ -464,4 +466,5 @@ TEST(BitRle, Overflow) {
   }
 }
 
+}  // namespace util
 }  // namespace arrow

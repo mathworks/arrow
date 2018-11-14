@@ -17,6 +17,9 @@
 package array
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/apache/arrow/go/arrow"
 	"github.com/apache/arrow/go/arrow/internal/bitutil"
 	"github.com/apache/arrow/go/arrow/memory"
@@ -30,9 +33,9 @@ type Boolean struct {
 
 // NewBoolean creates a boolean array from the data memory.Buffer and contains length elements.
 // The nullBitmap buffer can be nil of there are no null values.
-// If nullN is not known, use UnknownNullCount to calculate the value of NullN at runtime from the nullBitmap buffer.
-func NewBoolean(length int, data *memory.Buffer, nullBitmap *memory.Buffer, nullN int) *Boolean {
-	return NewBooleanData(NewData(arrow.FixedWidthTypes.Boolean, length, []*memory.Buffer{nullBitmap, data}, nullN))
+// If nulls is not known, use UnknownNullCount to calculate the value of NullN at runtime from the nullBitmap buffer.
+func NewBoolean(length int, data *memory.Buffer, nullBitmap *memory.Buffer, nulls int) *Boolean {
+	return NewBooleanData(NewData(arrow.FixedWidthTypes.Boolean, length, []*memory.Buffer{nullBitmap, data}, nil, nulls, 0))
 }
 
 func NewBooleanData(data *Data) *Boolean {
@@ -44,6 +47,24 @@ func NewBooleanData(data *Data) *Boolean {
 
 func (a *Boolean) Value(i int) bool { return bitutil.BitIsSet(a.values, i) }
 
+func (a *Boolean) String() string {
+	o := new(strings.Builder)
+	o.WriteString("[")
+	for i := range a.values {
+		if i > 0 {
+			fmt.Fprintf(o, " ")
+		}
+		switch {
+		case a.IsNull(i):
+			o.WriteString("(null)")
+		default:
+			fmt.Fprintf(o, "%v", a.Value(i))
+		}
+	}
+	o.WriteString("]")
+	return o.String()
+}
+
 func (a *Boolean) setData(data *Data) {
 	a.array.setData(data)
 	vals := data.buffers[1]
@@ -51,3 +72,7 @@ func (a *Boolean) setData(data *Data) {
 		a.values = vals.Bytes()
 	}
 }
+
+var (
+	_ Interface = (*Boolean)(nil)
+)

@@ -19,6 +19,7 @@
 # arrow_io : Arrow IO interfaces
 
 ADD_ARROW_TEST(io-buffered-test)
+ADD_ARROW_TEST(io-compressed-test)
 ADD_ARROW_TEST(io-file-test)
 
 if (ARROW_HDFS AND NOT ARROW_BOOST_HEADER_ONLY)
@@ -26,6 +27,7 @@ if (ARROW_HDFS AND NOT ARROW_BOOST_HEADER_ONLY)
 endif()
 
 ADD_ARROW_TEST(io-memory-test)
+ADD_ARROW_TEST(io-readahead-test)
 
 ADD_ARROW_BENCHMARK(io-file-benchmark)
 ADD_ARROW_BENCHMARK(io-memory-benchmark)
@@ -34,8 +36,10 @@ ADD_ARROW_BENCHMARK(io-memory-benchmark)
 install(FILES
   api.h
   buffered.h
+  compressed.h
   file.h
   hdfs.h
   interfaces.h
   memory.h
+  readahead.h
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/arrow/io")

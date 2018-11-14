@@ -1,13 +1,12 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -80,7 +79,7 @@ public class TestAccountant {
 
     final Accountant child = new Accountant(parent, 2, Long.MAX_VALUE);
     assertEquals(2, parent.getAllocatedMemory());
-
+    assertEquals(10, child.getHeadroom());
     {
       AllocationOutcome first = child.allocateBytes(1);
       assertEquals(AllocationOutcome.SUCCESS, first);
@@ -139,7 +138,7 @@ public class TestAccountant {
     child.releaseBytes(9);
 
     assertEquals(1, child.getAllocatedMemory());
-    assertEquals(8, child.getHeadroom());
+    assertEquals(9, child.getHeadroom());
 
     // back to reservation size
     assertEquals(2, parent.getAllocatedMemory());
@@ -164,7 +163,7 @@ public class TestAccountant {
     child.releaseBytes(11);
     assertEquals(child.getAllocatedMemory(), 0);
     assertEquals(parent.getAllocatedMemory(), 2);
-    assertEquals(8, child.getHeadroom());
+    assertEquals(10, child.getHeadroom());
     assertEquals(8, parent.getHeadroom());
 
     child.close();

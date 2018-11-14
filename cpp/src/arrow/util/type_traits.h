@@ -21,6 +21,7 @@
 #include <type_traits>
 
 namespace arrow {
+namespace internal {
 
 /// \brief Metafunction to allow checking if a type matches any of another set of types
 template <typename...>
@@ -36,6 +37,12 @@ struct IsOneOf<T, U, Args...> {
 template <typename T, typename... Args>
 using EnableIfIsOneOf = typename std::enable_if<IsOneOf<T, Args...>::value, T>::type;
 
+/// \brief is_null_pointer from C++17
+template <typename T>
+struct is_null_pointer : std::is_same<std::nullptr_t, typename std::remove_cv<T>::type> {
+};
+
+}  // namespace internal
 }  // namespace arrow
 
 #endif  // ARROW_UTIL_TYPE_TRAITS_H

@@ -27,8 +27,6 @@ except ImportError:
 else:
     import pyarrow.pandas_compat as pdcompat
 
-from .util import _deprecate_nthreads
-
 
 cdef class ChunkedArray:
     """
@@ -50,16 +48,40 @@ cdef class ChunkedArray:
         self.sp_chunked_array = chunked_array
         self.chunked_array = chunked_array.get()
 
-    property type:
+    def __reduce__(self):
+        return chunked_array, (self.chunks, self.type)
 
-        def __get__(self):
-            return pyarrow_wrap_data_type(self.sp_chunked_array.get().type())
+    @property
+    def type(self):
+        return pyarrow_wrap_data_type(self.sp_chunked_array.get().type())
 
     def length(self):
         return self.chunked_array.length()
 
     def __len__(self):
         return self.length()
+
+    def __repr__(self):
+        type_format = object.__repr__(self)
+        return '{0}\n{1}'.format(type_format, str(self))
+
+    def format(self, int indent=0, int window=10):
+        cdef:
+            c_string result
+
+        with nogil:
+            check_status(
+                PrettyPrint(
+                    deref(self.chunked_array),
+                    PrettyPrintOptions(indent, window),
+                    &result
+                )
+            )
+
+        return frombytes(result)
+
+    def __str__(self):
+        return self.format()
 
     @property
     def null_count(self):
@@ -95,16 +117,50 @@ cdef class ChunkedArray:
             else:
                 index -= self.chunked_array.chunk(j).get().length()
 
-    def to_pandas(self,
-                  c_bool strings_to_categorical=False,
-                  c_bool zero_copy_only=False,
-                  c_bool integer_object_nulls=False):
+    def equals(self, ChunkedArray other):
         """
-        Convert the arrow::Column to a pandas.Series
+        Return whether the contents of two chunked arrays are equal
+
+        Parameters
+        ----------
+        other : pyarrow.ChunkedArray
 
         Returns
         -------
-        pandas.Series
+        are_equal : boolean
+        """
+        cdef:
+            CChunkedArray* this_arr = self.chunked_array
+            CChunkedArray* other_arr = other.chunked_array
+            c_bool result
+
+        with nogil:
+            result = this_arr.Equals(deref(other_arr))
+
+        return result
+
+    def to_pandas(self, bint strings_to_categorical=False,
+                  bint zero_copy_only=False, bint integer_object_nulls=False,
+                  bint date_as_object=False):
+        """
+        Convert the arrow::ChunkedArray to an array object suitable for use
+        in pandas
+
+        Parameters
+        ----------
+        strings_to_categorical : boolean, default False
+            Encode string (UTF8) and binary types to pandas.Categorical
+        zero_copy_only : boolean, default False
+            Raise an ArrowException if this function call would require copying
+            the underlying data
+        integer_object_nulls : boolean, default False
+            Cast integers with nulls to objects
+        date_as_object : boolean, default False
+            Cast dates to objects
+
+        See also
+        --------
+        Column.to_pandas
         """
         cdef:
             PyObject* out
@@ -114,6 +170,7 @@ cdef class ChunkedArray:
             strings_to_categorical=strings_to_categorical,
             zero_copy_only=zero_copy_only,
             integer_object_nulls=integer_object_nulls,
+            date_as_object=date_as_object,
             use_threads=False)
 
         with nogil:
@@ -123,6 +180,11 @@ cdef class ChunkedArray:
                 self, &out))
 
         return wrap_array_output(out)
+
+    def __array__(self, dtype=None):
+        if dtype is None:
+            return self.to_pandas()
+        return self.to_pandas().astype(dtype)
 
     def dictionary_encode(self):
         """
@@ -214,14 +276,9 @@ cdef class ChunkedArray:
 
         return pyarrow_wrap_array(self.chunked_array.chunk(i))
 
-    property chunks:
-
-        def __get__(self):
-            cdef int i
-            chunks = []
-            for i in range(self.num_chunks):
-                chunks.append(self.chunk(i))
-            return chunks
+    @property
+    def chunks(self):
+        return list(self.iterchunks())
 
     def iterchunks(self):
         for i in range(self.num_chunks):
@@ -342,14 +399,15 @@ cdef class Column:
         self.sp_column = column
         self.column = column.get()
 
+    def __reduce__(self):
+        return column, (self.field, self.data)
+
     def __repr__(self):
         from pyarrow.compat import StringIO
         result = StringIO()
         result.write('<Column name={0!r} type={1!r}>'
                      .format(self.name, self.type))
-        data = self.data
-        for i, chunk in enumerate(data.chunks):
-            result.write('\nchunk {0}: {1}'.format(i, repr(chunk)))
+        result.write('\n{}'.format(str(self.data)))
 
         return result.getvalue()
 
@@ -361,11 +419,14 @@ cdef class Column:
         else:
             raise TypeError('Invalid comparison')
 
+    def __getitem__(self, key):
+        return self.data[key]
+
     @staticmethod
     def from_array(*args):
         return column(*args)
 
-    def cast(self, object target_type, safe=True):
+    def cast(self, object target_type, bint safe=True):
         """
         Cast column values to another data type
 
@@ -381,15 +442,10 @@ cdef class Column:
         casted : Column
         """
         cdef:
-            CCastOptions options
+            CCastOptions options = CCastOptions(safe)
+            DataType type = _ensure_type(target_type)
             shared_ptr[CArray] result
-            DataType type
             CDatum out
-
-        type = _ensure_type(target_type)
-
-        options.allow_int_overflow = not safe
-        options.allow_time_truncate = not safe
 
         with nogil:
             check_status(Cast(_context(), CDatum(self.column.data()),
@@ -443,12 +499,23 @@ cdef class Column:
 
         return [pyarrow_wrap_column(col) for col in flattened]
 
-    def to_pandas(self,
-                  c_bool strings_to_categorical=False,
-                  c_bool zero_copy_only=False,
-                  c_bool integer_object_nulls=False):
+    def to_pandas(self, bint strings_to_categorical=False,
+                  bint zero_copy_only=False, bint integer_object_nulls=False,
+                  bint date_as_object=False):
         """
         Convert the arrow::Column to a pandas.Series
+
+        Parameters
+        ----------
+        strings_to_categorical : boolean, default False
+            Encode string (UTF8) and binary types to pandas.Categorical
+        zero_copy_only : boolean, default False
+            Raise an ArrowException if this function call would require copying
+            the underlying data
+        integer_object_nulls : boolean, default False
+            Cast integers with nulls to objects
+        date_as_object : boolean, default False
+            Cast dates to objects
 
         Returns
         -------
@@ -457,6 +524,7 @@ cdef class Column:
         values = self.data.to_pandas(
             strings_to_categorical=strings_to_categorical,
             zero_copy_only=zero_copy_only,
+            date_as_object=date_as_object,
             integer_object_nulls=integer_object_nulls)
         result = pd.Series(values, name=self.name)
 
@@ -468,6 +536,9 @@ cdef class Column:
                           .dt.tz_convert(tz))
 
         return result
+
+    def __array__(self, dtype=None):
+        return self.data.__array__(dtype=dtype)
 
     def equals(self, Column other):
         """
@@ -598,8 +669,8 @@ cdef _schema_from_arrays(arrays, names, dict metadata,
             raise ValueError('Must pass names when constructing '
                              'from Array objects')
         if len(names) != K:
-            raise ValueError("Length of names ({}) does not match "
-                             "length of arrays ({})".format(len(names), K))
+            raise ValueError('Length of names ({}) does not match '
+                             'length of arrays ({})'.format(len(names), K))
         for i in range(K):
             val = arrays[i]
             if isinstance(val, (Array, ChunkedArray)):
@@ -637,6 +708,9 @@ cdef class RecordBatch:
     cdef void init(self, const shared_ptr[CRecordBatch]& batch):
         self.sp_batch = batch
         self.batch = batch.get()
+
+    def __reduce__(self):
+        return _reconstruct_record_batch, (self.columns, self.schema)
 
     def __len__(self):
         return self.batch.num_rows()
@@ -704,9 +778,20 @@ cdef class RecordBatch:
 
         return self._schema
 
+    @property
+    def columns(self):
+        """
+        List of all columns in numerical order
+
+        Returns
+        -------
+        list of pa.Column
+        """
+        return [self.column(i) for i in range(self.num_columns)]
+
     def column(self, i):
         """
-        Select single column from record batcha
+        Select single column from record batch
 
         Returns
         -------
@@ -800,16 +885,42 @@ cdef class RecordBatch:
             entries.append((name, column))
         return OrderedDict(entries)
 
-    def to_pandas(self, nthreads=None, use_threads=False):
+    def to_pandas(self, MemoryPool memory_pool=None, categories=None,
+                  bint strings_to_categorical=False, bint zero_copy_only=False,
+                  bint integer_object_nulls=False, bint date_as_object=False,
+                  bint use_threads=True):
         """
         Convert the arrow::RecordBatch to a pandas DataFrame
+
+        Parameters
+        ----------
+        memory_pool: MemoryPool, optional
+            Specific memory pool to use to allocate casted columns
+        categories: list, default empty
+            List of columns that should be returned as pandas.Categorical
+        strings_to_categorical : boolean, default False
+            Encode string (UTF8) and binary types to pandas.Categorical
+        zero_copy_only : boolean, default False
+            Raise an ArrowException if this function call would require copying
+            the underlying data
+        integer_object_nulls : boolean, default False
+            Cast integers with nulls to objects
+        date_as_object : boolean, default False
+            Cast dates to objects
+        use_threads: boolean, default True
+            Whether to parallelize the conversion using multiple threads
 
         Returns
         -------
         pandas.DataFrame
         """
-        use_threads = _deprecate_nthreads(use_threads, nthreads)
-        return Table.from_batches([self]).to_pandas(use_threads=use_threads)
+        return Table.from_batches([self]).to_pandas(
+            memory_pool=memory_pool, categories=categories,
+            strings_to_categorical=strings_to_categorical,
+            zero_copy_only=zero_copy_only,
+            integer_object_nulls=integer_object_nulls,
+            date_as_object=date_as_object, use_threads=use_threads
+        )
 
     @classmethod
     def from_pandas(cls, df, Schema schema=None, bint preserve_index=True,
@@ -842,7 +953,7 @@ cdef class RecordBatch:
         return cls.from_arrays(arrays, names, metadata)
 
     @staticmethod
-    def from_arrays(list arrays, list names, dict metadata=None):
+    def from_arrays(list arrays, names, dict metadata=None):
         """
         Construct a RecordBatch from multiple pyarrow.Arrays
 
@@ -850,8 +961,8 @@ cdef class RecordBatch:
         ----------
         arrays: list of pyarrow.Array
             column-wise data vectors
-        names: list of str
-            Labels for the columns
+        names: pyarrow.Schema or list of str
+            schema or list of labels for the columns
 
         Returns
         -------
@@ -860,7 +971,7 @@ cdef class RecordBatch:
         cdef:
             Array arr
             c_string c_name
-            shared_ptr[CSchema] schema
+            shared_ptr[CSchema] c_schema
             vector[shared_ptr[CArray]] c_arrays
             int64_t num_rows
             int64_t i
@@ -870,7 +981,10 @@ cdef class RecordBatch:
             num_rows = len(arrays[0])
         else:
             num_rows = 0
-        _schema_from_arrays(arrays, names, metadata, &schema)
+        if isinstance(names, Schema):
+            c_schema = (<Schema> names).sp_schema
+        else:
+            _schema_from_arrays(arrays, names, metadata, &c_schema)
 
         c_arrays.reserve(len(arrays))
         for arr in arrays:
@@ -880,7 +994,14 @@ cdef class RecordBatch:
             c_arrays.push_back(arr.sp_array)
 
         return pyarrow_wrap_batch(
-            CRecordBatch.Make(schema, num_rows, c_arrays))
+            CRecordBatch.Make(c_schema, num_rows, c_arrays))
+
+
+def _reconstruct_record_batch(columns, schema):
+    """
+    Internal: reconstruct RecordBatch from pickled components.
+    """
+    return RecordBatch.from_arrays(columns, schema)
 
 
 def table_to_blocks(PandasOptions options, Table table,
@@ -934,6 +1055,12 @@ cdef class Table:
         """
         with nogil:
             check_status(self.table.Validate())
+
+    def __reduce__(self):
+        # Reduce the columns as ChunkedArrays to avoid serializing schema
+        # data twice
+        columns = [col.data for col in self.columns]
+        return _reconstruct_table, (columns, self.schema)
 
     def replace_schema_metadata(self, dict metadata=None):
         """
@@ -1004,9 +1131,40 @@ cdef class Table:
 
         return result
 
+    def cast(self, Schema target_schema, bint safe=True):
+        """
+        Cast table values to another schema
+
+        Parameters
+        ----------
+        target_schema : Schema
+            Schema to cast to, the names and order of fields must match
+        safe : boolean, default True
+            Check for overflows or other unsafe conversions
+
+        Returns
+        -------
+        casted : Table
+        """
+        cdef:
+            Column column, casted
+            Field field
+            list newcols = []
+
+        if self.schema.names != target_schema.names:
+            raise ValueError("Target schema's field names are not matching "
+                             "the table's field names: {!r}, {!r}"
+                             .format(self.schema.names, target_schema.names))
+
+        for column, field in zip(self.itercolumns(), target_schema):
+            casted = column.cast(field.type, safe=safe)
+            newcols.append(casted)
+
+        return Table.from_arrays(newcols, schema=target_schema)
+
     @classmethod
     def from_pandas(cls, df, Schema schema=None, bint preserve_index=True,
-                    nthreads=None, columns=None):
+                    nthreads=None, columns=None, bint safe=True):
         """
         Convert pandas.DataFrame to an Arrow Table.
 
@@ -1037,7 +1195,8 @@ cdef class Table:
             indicated number of threads
         columns : list, optional
            List of column to be converted. If None, use all columns.
-
+        safe : boolean, default True
+           Check for overflows or other unsafe conversions
 
         Returns
         -------
@@ -1060,7 +1219,8 @@ cdef class Table:
             schema=schema,
             preserve_index=preserve_index,
             nthreads=nthreads,
-            columns=columns
+            columns=columns,
+            safe=safe
         )
         return cls.from_arrays(arrays, names=names, metadata=metadata)
 
@@ -1104,7 +1264,7 @@ cdef class Table:
         columns.reserve(K)
 
         for i in range(K):
-            if isinstance(arrays[i], (Array, list)):
+            if isinstance(arrays[i], Array):
                 columns.push_back(
                     make_shared[CColumn](
                         c_schema.get().field(i),
@@ -1127,7 +1287,7 @@ cdef class Table:
                     )
                 )
             else:
-                raise ValueError(type(arrays[i]))
+                raise TypeError(type(arrays[i]))
 
         return pyarrow_wrap_table(CTable.Make(c_schema, columns))
 
@@ -1208,26 +1368,29 @@ cdef class Table:
 
         return result
 
-    def to_pandas(self, nthreads=None, strings_to_categorical=False,
-                  memory_pool=None, zero_copy_only=False, categories=None,
-                  integer_object_nulls=False, use_threads=False):
+    def to_pandas(self, MemoryPool memory_pool=None, categories=None,
+                  bint strings_to_categorical=False, bint zero_copy_only=False,
+                  bint integer_object_nulls=False, bint date_as_object=False,
+                  bint use_threads=True):
         """
         Convert the arrow::Table to a pandas DataFrame
 
         Parameters
         ----------
-        strings_to_categorical : boolean, default False
-            Encode string (UTF8) and binary types to pandas.Categorical
         memory_pool: MemoryPool, optional
             Specific memory pool to use to allocate casted columns
+        categories: list, default empty
+            List of columns that should be returned as pandas.Categorical
+        strings_to_categorical : boolean, default False
+            Encode string (UTF8) and binary types to pandas.Categorical
         zero_copy_only : boolean, default False
             Raise an ArrowException if this function call would require copying
             the underlying data
-        categories: list, default empty
-            List of columns that should be returned as pandas.Categorical
         integer_object_nulls : boolean, default False
             Cast integers with nulls to objects
-        use_threads: boolean, default False
+        date_as_object : boolean, default False
+            Cast dates to objects
+        use_threads: boolean, default True
             Whether to parallelize the conversion using multiple threads
 
         Returns
@@ -1237,12 +1400,11 @@ cdef class Table:
         cdef:
             PandasOptions options
 
-        use_threads = _deprecate_nthreads(use_threads, nthreads)
-
         options = PandasOptions(
             strings_to_categorical=strings_to_categorical,
             zero_copy_only=zero_copy_only,
             integer_object_nulls=integer_object_nulls,
+            date_as_object=date_as_object,
             use_threads=use_threads)
 
         mgr = pdcompat.table_to_blockmanager(options, self, memory_pool,
@@ -1339,6 +1501,17 @@ cdef class Table:
         """
         for i in range(self.num_columns):
             yield self.column(i)
+
+    @property
+    def columns(self):
+        """
+        List of all columns in numerical order
+
+        Returns
+        -------
+        list of pa.Column
+        """
+        return [self._column(i) for i in range(self.num_columns)]
 
     @property
     def num_columns(self):
@@ -1441,6 +1614,13 @@ cdef class Table:
             table = table.remove_column(idx)
 
         return table
+
+
+def _reconstruct_table(arrays, schema):
+    """
+    Internal: reconstruct pa.Table from pickled components.
+    """
+    return Table.from_arrays(arrays, schema=schema)
 
 
 def concat_tables(tables):

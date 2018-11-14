@@ -20,8 +20,8 @@
 #ifndef ARROW_IO_BUFFERED_H
 #define ARROW_IO_BUFFERED_H
 
+#include <cstdint>
 #include <memory>
-#include <string>
 
 #include "arrow/io/interfaces.h"
 #include "arrow/util/visibility.h"
@@ -44,10 +44,13 @@ class ARROW_EXPORT BufferedOutputStream : public OutputStream {
   /// \brief Close the buffered output stream.  This implicitly closes the
   /// underlying raw output stream.
   Status Close() override;
+  bool closed() const override;
 
   Status Tell(int64_t* position) const override;
   // Write bytes to the stream. Thread-safe
   Status Write(const void* data, int64_t nbytes) override;
+
+  Status Flush() override;
 
   /// \brief Return the underlying raw output stream.
   std::shared_ptr<OutputStream> raw() const;

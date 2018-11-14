@@ -19,9 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <limits>
-#include <set>
 #include <sstream>
 #include <utility>
 
@@ -29,6 +27,7 @@
 #include "arrow/compare.h"
 #include "arrow/pretty_print.h"
 #include "arrow/status.h"
+#include "arrow/type.h"
 #include "arrow/type_traits.h"
 #include "arrow/util/bit-util.h"
 #include "arrow/util/checked_cast.h"
@@ -39,6 +38,11 @@
 #include "arrow/visitor_inline.h"
 
 namespace arrow {
+
+using internal::BitmapAnd;
+using internal::checked_cast;
+using internal::CopyBitmap;
+using internal::CountSetBits;
 
 std::shared_ptr<ArrayData> ArrayData::Make(const std::shared_ptr<DataType>& type,
                                            int64_t length,
@@ -370,6 +374,10 @@ StructArray::StructArray(const std::shared_ptr<DataType>& type, int64_t length,
   boxed_fields_.resize(children.size());
 }
 
+const StructType* StructArray::struct_type() const {
+  return checked_cast<const StructType*>(data_->type.get());
+}
+
 std::shared_ptr<Array> StructArray::field(int i) const {
   if (!boxed_fields_[i]) {
     std::shared_ptr<ArrayData> field_data;
@@ -382,6 +390,11 @@ std::shared_ptr<Array> StructArray::field(int i) const {
   }
   DCHECK(boxed_fields_[i]);
   return boxed_fields_[i];
+}
+
+std::shared_ptr<Array> StructArray::GetFieldByName(const std::string& name) const {
+  int i = struct_type()->GetChildIndex(name);
+  return i == -1 ? nullptr : field(i);
 }
 
 Status StructArray::Flatten(MemoryPool* pool, ArrayVector* out) const {
@@ -664,12 +677,30 @@ namespace internal {
 struct ValidateVisitor {
   Status Visit(const NullArray&) { return Status::OK(); }
 
-  Status Visit(const PrimitiveArray&) { return Status::OK(); }
+  Status Visit(const PrimitiveArray& array) {
+    if (array.data()->buffers.size() != 2) {
+      return Status::Invalid("number of buffers was != 2");
+    }
+    if (array.values() == nullptr) {
+      return Status::Invalid("values was null");
+    }
+    return Status::OK();
+  }
 
-  Status Visit(const Decimal128Array&) { return Status::OK(); }
+  Status Visit(const Decimal128Array& array) {
+    if (array.data()->buffers.size() != 2) {
+      return Status::Invalid("number of buffers was != 2");
+    }
+    if (array.values() == nullptr) {
+      return Status::Invalid("values was null");
+    }
+    return Status::OK();
+  }
 
-  Status Visit(const BinaryArray&) {
-    // TODO(wesm): what to do here?
+  Status Visit(const BinaryArray& array) {
+    if (array.data()->buffers.size() != 3) {
+      return Status::Invalid("number of buffers was != 3");
+    }
     return Status::OK();
   }
 
@@ -688,24 +719,24 @@ struct ValidateVisitor {
          << " isn't large enough for length: " << array.length();
       return Status::Invalid(ss.str());
     }
-    const int32_t last_offset = array.value_offset(array.length());
-    if (last_offset > 0) {
-      if (!array.values()) {
-        return Status::Invalid("last offset was non-zero and values was null");
-      }
-      if (array.values()->length() != last_offset) {
-        std::stringstream ss;
-        ss << "Final offset invariant not equal to values length: " << last_offset
-           << "!=" << array.values()->length();
-        return Status::Invalid(ss.str());
-      }
 
-      const Status child_valid = ValidateArray(*array.values());
-      if (!child_valid.ok()) {
-        std::stringstream ss;
-        ss << "Child array invalid: " << child_valid.ToString();
-        return Status::Invalid(ss.str());
-      }
+    if (!array.values()) {
+      return Status::Invalid("values was null");
+    }
+
+    const int32_t last_offset = array.value_offset(array.length());
+    if (array.values()->length() != last_offset) {
+      std::stringstream ss;
+      ss << "Final offset invariant not equal to values length: " << last_offset
+         << "!=" << array.values()->length();
+      return Status::Invalid(ss.str());
+    }
+
+    const Status child_valid = ValidateArray(*array.values());
+    if (!child_valid.ok()) {
+      std::stringstream ss;
+      ss << "Child array invalid: " << child_valid.ToString();
+      return Status::Invalid(ss.str());
     }
 
     int32_t prev_offset = array.value_offset(0);

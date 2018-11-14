@@ -39,9 +39,18 @@
 #include "arrow/util/compression_zstd.h"
 #endif
 
+#ifdef ARROW_WITH_BZ2
+#include "arrow/util/compression_bz2.h"
+#endif
+
 #include "arrow/status.h"
 
 namespace arrow {
+namespace util {
+
+Compressor::~Compressor() {}
+
+Decompressor::~Decompressor() {}
 
 Codec::~Codec() {}
 
@@ -86,10 +95,18 @@ Status Codec::Create(Compression::type codec_type, std::unique_ptr<Codec>* resul
       return Status::NotImplemented("ZSTD codec support not built");
 #endif
       break;
+    case Compression::BZ2:
+#ifdef ARROW_WITH_BZ2
+      result->reset(new BZ2Codec());
+#else
+      return Status::NotImplemented("BZ2 codec support not built");
+#endif
+      break;
     default:
       return Status::Invalid("Unrecognized codec");
   }
   return Status::OK();
 }
 
+}  // namespace util
 }  // namespace arrow

@@ -17,7 +17,7 @@
 
 [package]
 name = "arrow"
-version = "0.1.0"
+version = "0.10.0"
 description = "Rust implementation of Apache Arrow"
 homepage = "https://github.com/apache/arrow"
 repository = "https://github.com/apache/arrow"
@@ -37,6 +37,7 @@ path = "src/lib.rs"
 bytes = "0.4"
 libc = "0.2"
 serde_json = "1.0.13"
+rand = "0.5"
 
 [dev-dependencies]
 criterion = "0.2"
@@ -46,5 +47,5 @@ name = "array_from_vec"
 harness = false
 
 [[bench]]
-name = "array_from_builder"
+name = "builder"
 harness = false

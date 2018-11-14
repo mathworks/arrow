@@ -156,10 +156,19 @@ class ARROW_EXPORT HadoopFileSystem : public FileSystem {
   // @param buffer_size, 0 for default
   // @param replication, 0 for default
   // @param default_block_size, 0 for default
+  Status OpenWritable(const std::string& path, bool append, int32_t buffer_size,
+                      int16_t replication, int64_t default_block_size,
+                      std::shared_ptr<HdfsOutputStream>* file);
+
+  Status OpenWritable(const std::string& path, bool append,
+                      std::shared_ptr<HdfsOutputStream>* file);
+
+  ARROW_DEPRECATED("Use OpenWritable")
   Status OpenWriteable(const std::string& path, bool append, int32_t buffer_size,
                        int16_t replication, int64_t default_block_size,
                        std::shared_ptr<HdfsOutputStream>* file);
 
+  ARROW_DEPRECATED("Use OpenWritable")
   Status OpenWriteable(const std::string& path, bool append,
                        std::shared_ptr<HdfsOutputStream>* file);
 
@@ -179,6 +188,8 @@ class ARROW_EXPORT HdfsReadableFile : public RandomAccessFile {
   ~HdfsReadableFile() override;
 
   Status Close() override;
+
+  bool closed() const override;
 
   Status GetSize(int64_t* size) override;
 
@@ -212,12 +223,14 @@ class ARROW_EXPORT HdfsReadableFile : public RandomAccessFile {
 };
 
 // Naming this file OutputStream because it does not support seeking (like the
-// WriteableFile interface)
+// WritableFile interface)
 class ARROW_EXPORT HdfsOutputStream : public OutputStream {
  public:
   ~HdfsOutputStream() override;
 
   Status Close() override;
+
+  bool closed() const override;
 
   Status Write(const void* buffer, int64_t nbytes) override;
 

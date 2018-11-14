@@ -16,31 +16,39 @@
 // under the License.
 
 #include <cstdint>
-#include <cstdio>
-#include <cstring>
+#include <limits>
 #include <memory>
+#include <ostream>
 #include <string>
-#include <vector>
 
-#include "gtest/gtest.h"
+#include <flatbuffers/flatbuffers.h>
+#include <gtest/gtest.h>
 
 #include "arrow/array.h"
 #include "arrow/buffer.h"
+#include "arrow/builder.h"
+#include "arrow/io/file.h"
 #include "arrow/io/memory.h"
 #include "arrow/io/test-common.h"
-#include "arrow/ipc/api.h"
+#include "arrow/ipc/Message_generated.h"  // IWYU pragma: keep
+#include "arrow/ipc/message.h"
 #include "arrow/ipc/metadata-internal.h"
+#include "arrow/ipc/reader.h"
 #include "arrow/ipc/test-common.h"
-#include "arrow/ipc/util.h"
+#include "arrow/ipc/writer.h"
 #include "arrow/memory_pool.h"
-#include "arrow/pretty_print.h"
+#include "arrow/record_batch.h"
 #include "arrow/status.h"
 #include "arrow/tensor.h"
 #include "arrow/test-util.h"
+#include "arrow/type.h"
 #include "arrow/util/bit-util.h"
 #include "arrow/util/checked_cast.h"
 
 namespace arrow {
+
+using internal::checked_cast;
+
 namespace ipc {
 
 using BatchVector = std::vector<std::shared_ptr<RecordBatch>>;
@@ -84,6 +92,58 @@ TEST(TestMessage, Equals) {
   Message msg5(b2, b1);
   ASSERT_FALSE(msg1.Equals(msg5));
   ASSERT_FALSE(msg5.Equals(msg1));
+}
+
+TEST(TestMessage, SerializeTo) {
+  const int64_t body_length = 64;
+
+  flatbuffers::FlatBufferBuilder fbb;
+  fbb.Finish(flatbuf::CreateMessage(fbb, internal::kCurrentMetadataVersion,
+                                    flatbuf::MessageHeader_RecordBatch, 0 /* header */,
+                                    body_length));
+
+  std::shared_ptr<Buffer> metadata;
+  ASSERT_OK(internal::WriteFlatbufferBuilder(fbb, &metadata));
+
+  std::string body = "abcdef";
+
+  std::unique_ptr<Message> message;
+  ASSERT_OK(Message::Open(metadata, std::make_shared<Buffer>(body), &message));
+
+  int64_t output_length = 0;
+  int64_t position = 0;
+
+  std::shared_ptr<io::BufferOutputStream> stream;
+
+  {
+    const int32_t alignment = 8;
+
+    ASSERT_OK(io::BufferOutputStream::Create(1 << 10, default_memory_pool(), &stream));
+    ASSERT_OK(message->SerializeTo(stream.get(), alignment, &output_length));
+    ASSERT_OK(stream->Tell(&position));
+    ASSERT_EQ(BitUtil::RoundUp(metadata->size() + 4, alignment) + body_length,
+              output_length);
+    ASSERT_EQ(output_length, position);
+  }
+
+  {
+    const int32_t alignment = 64;
+
+    ASSERT_OK(io::BufferOutputStream::Create(1 << 10, default_memory_pool(), &stream));
+    ASSERT_OK(message->SerializeTo(stream.get(), alignment, &output_length));
+    ASSERT_OK(stream->Tell(&position));
+    ASSERT_EQ(BitUtil::RoundUp(metadata->size() + 4, alignment) + body_length,
+              output_length);
+    ASSERT_EQ(output_length, position);
+  }
+}
+
+TEST(TestMessage, Verify) {
+  std::string metadata = "invalid";
+  std::string body = "abcdef";
+
+  Message message(std::make_shared<Buffer>(metadata), std::make_shared<Buffer>(body));
+  ASSERT_FALSE(message.Verify());
 }
 
 const std::shared_ptr<DataType> INT32 = std::make_shared<Int32Type>();
@@ -351,7 +411,7 @@ TEST_F(TestWriteRecordBatch, SliceTruncatesBuffers) {
   auto union_type = union_({field("f0", a0->type())}, {0});
   std::vector<int32_t> type_ids(a0->length());
   std::shared_ptr<Buffer> ids_buffer;
-  ASSERT_OK(test::CopyBufferFromVector(type_ids, default_memory_pool(), &ids_buffer));
+  ASSERT_OK(CopyBufferFromVector(type_ids, default_memory_pool(), &ids_buffer));
   a1 =
       std::make_shared<UnionArray>(union_type, a0->length(), struct_children, ids_buffer);
   CheckArray(a1);
@@ -363,8 +423,7 @@ TEST_F(TestWriteRecordBatch, SliceTruncatesBuffers) {
     type_offsets.push_back(i);
   }
   std::shared_ptr<Buffer> offsets_buffer;
-  ASSERT_OK(
-      test::CopyBufferFromVector(type_offsets, default_memory_pool(), &offsets_buffer));
+  ASSERT_OK(CopyBufferFromVector(type_offsets, default_memory_pool(), &offsets_buffer));
   a1 = std::make_shared<UnionArray>(dense_union_type, a0->length(), struct_children,
                                     ids_buffer, offsets_buffer);
   CheckArray(a1);
@@ -498,8 +557,11 @@ TEST_F(RecursionLimits, StressLimit) {
   CheckDepth(100, &it_works);
   ASSERT_TRUE(it_works);
 
+// Mitigate Valgrind's slowness
+#if !defined(ARROW_VALGRIND)
   CheckDepth(500, &it_works);
   ASSERT_TRUE(it_works);
+#endif
 }
 #endif  // !defined(_WIN32) || defined(NDEBUG)
 
@@ -507,7 +569,7 @@ class TestFileFormat : public ::testing::TestWithParam<MakeRecordBatch*> {
  public:
   void SetUp() {
     pool_ = default_memory_pool();
-    buffer_ = std::make_shared<PoolBuffer>(pool_);
+    ASSERT_OK(AllocateResizableBuffer(pool_, 0, &buffer_));
     sink_.reset(new io::BufferOutputStream(buffer_));
   }
   void TearDown() {}
@@ -549,7 +611,7 @@ class TestFileFormat : public ::testing::TestWithParam<MakeRecordBatch*> {
   MemoryPool* pool_;
 
   std::unique_ptr<io::BufferOutputStream> sink_;
-  std::shared_ptr<PoolBuffer> buffer_;
+  std::shared_ptr<ResizableBuffer> buffer_;
 };
 
 TEST_P(TestFileFormat, RoundTrip) {
@@ -573,7 +635,7 @@ class TestStreamFormat : public ::testing::TestWithParam<MakeRecordBatch*> {
  public:
   void SetUp() {
     pool_ = default_memory_pool();
-    buffer_ = std::make_shared<PoolBuffer>(pool_);
+    ASSERT_OK(AllocateResizableBuffer(pool_, 0, &buffer_));
     sink_.reset(new io::BufferOutputStream(buffer_));
   }
   void TearDown() {}
@@ -611,7 +673,7 @@ class TestStreamFormat : public ::testing::TestWithParam<MakeRecordBatch*> {
   MemoryPool* pool_;
 
   std::unique_ptr<io::BufferOutputStream> sink_;
-  std::shared_ptr<PoolBuffer> buffer_;
+  std::shared_ptr<ResizableBuffer> buffer_;
 };
 
 TEST_P(TestStreamFormat, RoundTrip) {
@@ -723,13 +785,22 @@ class TestTensorRoundTrip : public ::testing::Test, public IpcTestFixture {
     int32_t metadata_length;
     int64_t body_length;
 
+    const auto& type = checked_cast<const FixedWidthType&>(*tensor.type());
+    const int elem_size = type.bit_width() / 8;
+
     ASSERT_OK(mmap_->Seek(0));
 
     ASSERT_OK(WriteTensor(tensor, mmap_.get(), &metadata_length, &body_length));
 
-    std::shared_ptr<Tensor> result;
-    ASSERT_OK(ReadTensor(0, mmap_.get(), &result));
+    const int64_t expected_body_length = elem_size * tensor.size();
+    ASSERT_EQ(expected_body_length, body_length);
 
+    ASSERT_OK(mmap_->Seek(0));
+
+    std::shared_ptr<Tensor> result;
+    ASSERT_OK(ReadTensor(mmap_.get(), &result));
+
+    ASSERT_EQ(result->data()->size(), expected_body_length);
     ASSERT_TRUE(tensor.Equals(*result));
   }
 };
@@ -745,19 +816,27 @@ TEST_F(TestTensorRoundTrip, BasicRoundtrip) {
   int64_t size = 24;
 
   std::vector<int64_t> values;
-  test::randint(size, 0, 100, &values);
+  randint(size, 0, 100, &values);
 
-  auto data = test::GetBufferFromVector(values);
+  auto data = Buffer::Wrap(values);
 
   Tensor t0(int64(), data, shape, strides, dim_names);
-  Tensor tzero(int64(), data, {}, {}, {});
+  Tensor t_no_dims(int64(), data, {}, {}, {});
+  Tensor t_zero_length_dim(int64(), data, {0}, {8}, {"foo"});
 
   CheckTensorRoundTrip(t0);
-  CheckTensorRoundTrip(tzero);
+  CheckTensorRoundTrip(t_no_dims);
+  CheckTensorRoundTrip(t_zero_length_dim);
 
   int64_t serialized_size;
   ASSERT_OK(GetTensorSize(t0, &serialized_size));
   ASSERT_TRUE(serialized_size > static_cast<int64_t>(size * sizeof(int64_t)));
+
+  // ARROW-2840: Check that padding/alignment minded
+  std::vector<int64_t> shape_2 = {1, 1};
+  std::vector<int64_t> strides_2 = {8, 8};
+  Tensor t0_not_multiple_64(int64(), data, shape_2, strides_2, dim_names);
+  CheckTensorRoundTrip(t0_not_multiple_64);
 }
 
 TEST_F(TestTensorRoundTrip, NonContiguous) {
@@ -766,9 +845,9 @@ TEST_F(TestTensorRoundTrip, NonContiguous) {
   ASSERT_OK(io::MemoryMapFixture::InitMemoryMap(kBufferSize, path, &mmap_));
 
   std::vector<int64_t> values;
-  test::randint(24, 0, 100, &values);
+  randint(24, 0, 100, &values);
 
-  auto data = test::GetBufferFromVector(values);
+  auto data = Buffer::Wrap(values);
   Tensor tensor(int64(), data, {4, 3}, {48, 16});
 
   CheckTensorRoundTrip(tensor);

@@ -68,6 +68,7 @@ class ARROW_EXPORT FileInterface {
   virtual ~FileInterface() = 0;
   virtual Status Close() = 0;
   virtual Status Tell(int64_t* position) const = 0;
+  virtual bool closed() const = 0;
 
   FileMode::type mode() const { return mode_; }
 
@@ -114,6 +115,12 @@ class ARROW_EXPORT OutputStream : virtual public FileInterface, public Writable 
 };
 
 class ARROW_EXPORT InputStream : virtual public FileInterface, public Readable {
+ public:
+  /// \brief Advance or skip stream indicated number of bytes
+  /// \param[in] nbytes the number to move forward
+  /// \return Status
+  Status Advance(int64_t nbytes);
+
  protected:
   InputStream() = default;
 };
@@ -162,16 +169,18 @@ class ARROW_EXPORT RandomAccessFile : public InputStream, public Seekable {
   std::unique_ptr<RandomAccessFileImpl> impl_;
 };
 
-class ARROW_EXPORT WriteableFile : public OutputStream, public Seekable {
+class ARROW_EXPORT WritableFile : public OutputStream, public Seekable {
  public:
   virtual Status WriteAt(int64_t position, const void* data, int64_t nbytes) = 0;
 
  protected:
-  WriteableFile() = default;
+  WritableFile() = default;
 };
 
-class ARROW_EXPORT ReadWriteFileInterface : public RandomAccessFile,
-                                            public WriteableFile {
+// TODO(wesm): remove this after 0.11
+using WriteableFile = WritableFile;
+
+class ARROW_EXPORT ReadWriteFileInterface : public RandomAccessFile, public WritableFile {
  protected:
   ReadWriteFileInterface() { RandomAccessFile::set_mode(FileMode::READWRITE); }
 };

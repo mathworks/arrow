@@ -23,10 +23,13 @@
 #include <sstream>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "arrow/array.h"
-#include "arrow/builder.h"
+#include "arrow/buffer.h"
+#include "arrow/builder.h"  // IWYU pragma: keep
 #include "arrow/ipc/dictionary.h"
 #include "arrow/record_batch.h"
 #include "arrow/status.h"
@@ -40,6 +43,11 @@
 #include "arrow/visitor_inline.h"
 
 namespace arrow {
+
+class MemoryPool;
+
+using internal::checked_cast;
+
 namespace ipc {
 namespace internal {
 namespace json {
@@ -961,7 +969,7 @@ class ArrayReader {
     int length = static_cast<int>(is_valid.size());
 
     std::shared_ptr<Buffer> out_buffer;
-    RETURN_NOT_OK(GetEmptyBitmap(pool_, length, &out_buffer));
+    RETURN_NOT_OK(AllocateEmptyBitmap(pool_, length, &out_buffer));
     uint8_t* bitmap = out_buffer->mutable_data();
 
     *null_count = 0;
@@ -1017,7 +1025,6 @@ class ArrayReader {
 
     DCHECK_EQ(static_cast<int32_t>(json_data_arr.Size()), length_);
 
-    auto byte_buffer = std::make_shared<PoolBuffer>(pool_);
     for (int i = 0; i < length_; ++i) {
       if (!is_valid_[i]) {
         RETURN_NOT_OK(builder.AppendNull());
@@ -1034,9 +1041,8 @@ class ArrayReader {
         DCHECK(hex_string.size() % 2 == 0) << "Expected base16 hex string";
         int32_t length = static_cast<int>(hex_string.size()) / 2;
 
-        if (byte_buffer->size() < length) {
-          RETURN_NOT_OK(byte_buffer->Resize(length));
-        }
+        std::shared_ptr<Buffer> byte_buffer;
+        RETURN_NOT_OK(AllocateBuffer(pool_, length, &byte_buffer));
 
         const char* hex_data = hex_string.c_str();
         uint8_t* byte_buffer_data = byte_buffer->mutable_data();

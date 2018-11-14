@@ -21,65 +21,43 @@ FROM ubuntu:18.04
 # Otherwise this will install openjdk 8 and openjdk 11 at once.
 RUN apt-get update && \
     apt-get install -y openjdk-8-jdk-headless && \
-	apt-get install -y \
-		gcc-8 \
-		g++-8 \
-		vim \
-		git \
-		wget \
-		make \
-		ninja-build \
-        rsync \
-        maven \
-        pkg-config \
-        gobject-introspection \
-        libgirepository1.0-dev \
-        gtk-doc-tools \
-        libtool \
-        autoconf-archive \
-        npm
+    apt-get install -y \
+          gcc-8 \
+          g++-8 \
+          git \
+          wget \
+          make \
+          ninja-build \
+          rsync \
+          maven \
+          pkg-config \
+          gobject-introspection \
+          libgirepository1.0-dev \
+          gtk-doc-tools \
+          libtool \
+          autoconf-archive \
+          npm
 
-# This will install conda in /home/ubuntu/miniconda
-RUN wget -O /tmp/miniconda.sh \
-    https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh && \
-    bash /tmp/miniconda.sh -b -p /home/ubuntu/miniconda && \
-    rm /tmp/miniconda.sh
+ENV CC=gcc-8 \
+    CXX=g++-8 \
+    PATH=/opt/conda/bin:$PATH \
+    CONDA_PREFIX=/opt/conda
 
-# Python dependencies
-# Create Conda environment
-RUN /home/ubuntu/miniconda/bin/conda create -y -q -n pyarrow-dev \
-        # Python
-        python=3.6 \
-        numpy \
-        pandas \
-        pytest \
-        cython \
-        ipython \
-        matplotlib \
+ADD ci/docker_install_conda.sh \
+    ci/conda_env_cpp.yml \
+    ci/conda_env_python.yml \
+    /arrow/ci/
+RUN arrow/ci/docker_install_conda.sh && \
+    conda install -c conda-forge \
+        --file arrow/ci/conda_env_cpp.yml \
+        --file arrow/ci/conda_env_python.yml \
         numpydoc \
         sphinx \
-        sphinx_bootstrap_theme \
-        six \
-        setuptools \
-        # C++
-        boost-cpp \
-        cmake \
-        flatbuffers \
-        rapidjson \
-        thrift-cpp \
-        snappy \
-        zlib \
-        brotli \
-        jemalloc \
-        lz4-c \
-        zstd \
+        sphinx_rtd_theme \
         doxygen \
-        maven \
-        -c conda-forge
+        maven && \
+    conda clean --all -y
 
-ENV CC=gcc-8
-ENV CXX=g++-8
+ADD . /arrow
 
-ADD . /apache-arrow
-WORKDIR /apache-arrow
 CMD arrow/dev/gen_apidocs/create_documents.sh

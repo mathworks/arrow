@@ -17,7 +17,10 @@
   under the License.
 -->
 
-# Arrow C++
+# Apache Arrow C++ codebase
+
+This directory contains the code and build system for the Arrow C++ libraries,
+as well as for the C++ libraries for Apache Parquet.
 
 ## System setup
 
@@ -78,6 +81,28 @@ environment variable (which requires the `locales` package or equivalent):
 ```
 export LC_ALL="en_US.UTF-8"
 ```
+
+## Building and Developing Parquet Libraries
+
+To build the C++ libraries for Apache Parquet, add the flag
+`-DARROW_PARQUET=ON` when invoking CMake. The Parquet libraries and unit tests
+can be built with the `parquet` make target:
+
+```shell
+make parquet
+```
+
+Running `ctest -L unittest` will run all built C++ unit tests, while `ctest -L
+parquet` will run only the Parquet unit tests. The unit tests depend on an
+environment variable `PARQUET_TEST_DATA` that depends on a git submodule to the
+repository https://github.com/apache/parquet-testing:
+
+```shell
+git submodule update --init
+export PARQUET_TEST_DATA=$ARROW_ROOT/cpp/submodules/parquet-testing/data
+```
+
+Here `$ARROW_ROOT` is the absolute path to the Arrow codebase.
 
 ### Statically linking to Arrow on Windows
 
@@ -200,6 +225,41 @@ The optional arrow reader for the Apache ORC format (found in the
 This is currently not supported on windows. Note that this functionality is
 still in Alpha stages, and subject to API changes without deprecation warnings.
 
+### Building and developing Gandiva (optional)
+
+The Gandiva library supports compiling and evaluating expressions on arrow
+data. It uses LLVM for doing just-in-time compilation of the expressions.
+
+In addition to the arrow dependencies, gandiva requires :
+* On linux, gcc 4.9 or higher C++11-enabled compiler.
+* LLVM
+
+On Ubuntu/Debian you can install these requirements with:
+
+```shell
+sudo apt-add-repository -y "deb http://llvm.org/apt/trusty/ llvm-toolchain-trusty-6.0 main"
+sudo apt-get update -qq
+sudo apt-get install llvm-6.0-dev
+```
+
+On macOS, you can use [Homebrew][1]:
+
+```shell
+brew install llvm@6
+```
+
+The optional `gandiva` libraries and tests can be built by passing
+`-DARROW_GANDIVA=on`.
+
+```shell
+cmake .. -DARROW_GANDIVA=on
+make
+ctest -L gandiva
+```
+
+This library is still in Alpha stages, and subject to API changes without
+deprecation warnings.
+
 ### API documentation
 
 To generate the (html) API documentation, run the following command in the apidoc
@@ -288,14 +348,16 @@ CC="clang-4.0" CXX="clang++-4.0" cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
 
 This presumes that `include-what-you-use` and `iwyu_tool.py` are in your
 `$PATH`. If you compiled IWYU using a different version of clang, then
-substitute the version number above accordingly. The results of this script are
-logged to a temporary file, whose location can be found by examining the shell
-output:
+substitute the version number above accordingly.
 
-```
-...
-Logging IWYU to /tmp/arrow-cpp-iwyu.gT7XXV
-...
+We have provided a Docker-based IWYU to make it easier to run these
+checks. This can be run using the docker-compose setup in the `dev/` directory
+
+```shell
+# If you have not built the base image already
+docker build -t arrow_integration_xenial_base -f dev/docker_common/Dockerfile.xenial.base .
+
+dev/run_docker_compose.sh iwyu
 ```
 
 ### Linting

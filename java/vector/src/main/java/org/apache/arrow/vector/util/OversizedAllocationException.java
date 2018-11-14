@@ -1,13 +1,12 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,14 +22,19 @@ package org.apache.arrow.vector.util;
  * An exception that is used to signal that allocation request in bytes is greater than the maximum allowed by
  * {@link org.apache.arrow.memory.BufferAllocator#buffer(int) allocator}.
  *
- * <p>Operators should handle this exception to split the batch and later resume the execution on the next iteration.</p>
+ * <p>Operators should handle this exception to split the batch and later resume the execution on the next
+ * iteration.</p>
  */
 public class OversizedAllocationException extends RuntimeException {
   public OversizedAllocationException() {
     super();
   }
 
-  public OversizedAllocationException(String message, Throwable cause, boolean enableSuppression, boolean writableStackTrace) {
+  public OversizedAllocationException(
+      String message,
+      Throwable cause,
+      boolean enableSuppression,
+      boolean writableStackTrace) {
     super(message, cause, enableSuppression, writableStackTrace);
   }
 

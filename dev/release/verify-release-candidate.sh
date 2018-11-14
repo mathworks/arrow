@@ -19,8 +19,7 @@
 #
 
 # Requirements
-# - Ruby 2.x
-#   - Plus gem dependencies, see c_glib/README
+# - Ruby >= 2.3
 # - Maven >= 3.3.9
 # - JDK >=7
 # - gcc >= 4.8
@@ -30,23 +29,42 @@
 # LD_LIBRARY_PATH
 
 case $# in
-  2) VERSION="$1"
-     RC_NUMBER="$2"
+  3) ARTIFACT="$1"
+     VERSION="$2"
+     RC_NUMBER="$3"
+     case $ARTIFACT in
+       source|binaries) ;;
+       *) echo "Invalid argument: '${ARTIFACT}', valid options are 'source' or 'binaries'"
+          exit 1
+          ;;
+     esac
      ;;
-
-  *) echo "Usage: $0 X.Y.Z RC_NUMBER"
+  *) echo "Usage: $0 source|binaries X.Y.Z RC_NUMBER"
      exit 1
      ;;
 esac
 
 set -ex
+set -o pipefail
 
 HERE=$(cd `dirname "${BASH_SOURCE[0]:-$0}"` && pwd)
 
 ARROW_DIST_URL='https://dist.apache.org/repos/dist/dev/arrow'
 
+: ${ARROW_HAVE_GPU:=}
+if [ -z "$ARROW_HAVE_GPU" ]; then
+  if nvidia-smi --list-gpus 2>&1 > /dev/null; then
+    ARROW_HAVE_GPU=yes
+  fi
+fi
+
 download_dist_file() {
-  curl -f -O $ARROW_DIST_URL/$1
+  curl \
+    --silent \
+    --show-error \
+    --fail \
+    --location \
+    --remote-name $ARROW_DIST_URL/$1
 }
 
 download_rc_file() {
@@ -62,16 +80,42 @@ fetch_archive() {
   local dist_name=$1
   download_rc_file ${dist_name}.tar.gz
   download_rc_file ${dist_name}.tar.gz.asc
-  download_rc_file ${dist_name}.tar.gz.sha1
+  download_rc_file ${dist_name}.tar.gz.sha256
   download_rc_file ${dist_name}.tar.gz.sha512
   gpg --verify ${dist_name}.tar.gz.asc ${dist_name}.tar.gz
-  if [ "$(uname)" == "Darwin" ]; then
-    shasum -a 1 ${dist_name}.tar.gz | diff - ${dist_name}.tar.gz.sha1
-    shasum -a 512 ${dist_name}.tar.gz | diff - ${dist_name}.tar.gz.sha512
-  else
-    sha1sum ${dist_name}.tar.gz | diff - ${dist_name}.tar.gz.sha1
-    sha512sum ${dist_name}.tar.gz | diff - ${dist_name}.tar.gz.sha512
-  fi
+  shasum -a 256 -c ${dist_name}.tar.gz.sha256
+  shasum -a 512 -c ${dist_name}.tar.gz.sha512
+}
+
+verify_binary_artifacts() {
+  # --show-progress not supported on wget < 1.16
+  wget --help | grep -q '\--show-progress' && \
+      _WGET_PROGRESS_OPT="-q --show-progress" || _WGET_PROGRESS_OPT=""
+
+  # download the binaries folder for the current RC
+  rcname=apache-arrow-${VERSION}-rc${RC_NUMBER}
+  wget -P "$rcname" \
+    --quiet \
+    --no-host-directories \
+    --cut-dirs=5 \
+    $_WGET_PROGRESS_OPT \
+    --no-parent \
+    --reject 'index.html*' \
+    --recursive "$ARROW_DIST_URL/$rcname/binaries/"
+
+  # verify the signature and the checksums of each artifact
+  find $rcname/binaries -name '*.asc' | while read sigfile; do
+    artifact=${sigfile/.asc/}
+    gpg --verify $sigfile $artifact || exit 1
+
+    # go into the directory because the checksum files contain only the
+    # basename of the artifact
+    pushd $(dirname $artifact)
+    base_artifact=$(basename $artifact)
+    shasum -a 256 -c $base_artifact.sha256 || exit 1
+    shasum -a 512 -c $base_artifact.sha512 || exit 1
+    popd
+  done
 }
 
 setup_tempdir() {
@@ -97,7 +141,7 @@ setup_miniconda() {
   bash miniconda.sh -b -p $MINICONDA
   rm -f miniconda.sh
 
-  export PATH=$MINICONDA/bin:$PATH
+  . $MINICONDA/etc/profile.d/conda.sh
 
   conda create -n arrow-test -y -q python=3.6 \
         nomkl \
@@ -105,7 +149,7 @@ setup_miniconda() {
         pandas \
         six \
         cython -c conda-forge
-  source activate arrow-test
+  conda activate arrow-test
 }
 
 # Build and test C++
@@ -114,40 +158,29 @@ test_and_install_cpp() {
   mkdir cpp/build
   pushd cpp/build
 
-  cmake -DCMAKE_INSTALL_PREFIX=$ARROW_HOME \
-        -DCMAKE_INSTALL_LIBDIR=$ARROW_HOME/lib \
-        -DARROW_PLASMA=on \
-        -DARROW_PYTHON=on \
-        -DARROW_BOOST_USE_SHARED=on \
-        -DCMAKE_BUILD_TYPE=release \
-        -DARROW_BUILD_BENCHMARKS=on \
-        ..
+  ARROW_CMAKE_OPTIONS="
+-DCMAKE_INSTALL_PREFIX=$ARROW_HOME
+-DCMAKE_INSTALL_LIBDIR=$ARROW_HOME/lib
+-DARROW_PLASMA=ON
+-DARROW_ORC=ON
+-DARROW_PYTHON=ON
+-DARROW_PARQUET=ON
+-DARROW_BOOST_USE_SHARED=ON
+-DCMAKE_BUILD_TYPE=release
+-DARROW_BUILD_BENCHMARKS=ON
+"
+  if [ "$ARROW_HAVE_GPU" = "yes" ]; then
+    ARROW_CMAKE_OPTIONS="$ARROW_CMAKE_OPTIONS -DARROW_GPU=ON"
+  fi
+  cmake $ARROW_CMAKE_OPTIONS ..
 
   make -j$NPROC
   make install
+
+  git clone https://github.com/apache/parquet-testing.git
+  export PARQUET_TEST_DATA=$PWD/parquet-testing/data
 
   ctest -VV -L unittest
-  popd
-}
-
-# Build and install Parquet master so we can test the Python bindings
-
-install_parquet_cpp() {
-  git clone git@github.com:apache/parquet-cpp.git
-
-  mkdir parquet-cpp/build
-  pushd parquet-cpp/build
-
-  cmake -DCMAKE_INSTALL_PREFIX=$PARQUET_HOME \
-        -DCMAKE_INSTALL_LIBDIR=$PARQUET_HOME/lib \
-        -DCMAKE_BUILD_TYPE=release \
-        -DPARQUET_BOOST_USE_SHARED=on \
-        -DPARQUET_BUILD_TESTS=off \
-        ..
-
-  make -j$NPROC
-  make install
-
   popd
 }
 
@@ -172,9 +205,16 @@ test_glib() {
   make -j$NPROC
   make install
 
-  GI_TYPELIB_PATH=$ARROW_HOME/lib/girepository-1.0 \
-                 NO_MAKE=yes \
-                 test/run-test.sh
+  export GI_TYPELIB_PATH=$ARROW_HOME/lib/girepository-1.0:$GI_TYPELIB_PATH
+
+  if ! bundle --version; then
+    gem install bundler
+  fi
+
+  # Workaround for 0.11.0. 0.11.0 doesn't include c_glib/Gemfile.
+  wget https://raw.githubusercontent.com/apache/arrow/master/c_glib/Gemfile
+  bundle install --path vendor/bundle
+  bundle exec ruby test/run-test.rb
 
   popd
 }
@@ -194,6 +234,49 @@ test_js() {
 
   # run again to test all builds against the snapshots
   # npm test -- --integration
+  popd
+}
+
+test_ruby() {
+  pushd ruby
+
+  pushd red-arrow
+  bundle install --path vendor/bundle
+  bundle exec ruby test/run-test.rb
+  popd
+
+  if [ "$ARROW_HAVE_GPU" = "yes" ]; then
+    pushd red-arrow-gpu
+    bundle install --path vendor/bundle
+    bundle exec ruby test/run-test.rb
+    popd
+  fi
+
+  popd
+}
+
+test_rust() {
+  # install rust toolchain in a similar fashion like test-miniconda
+  export RUSTUP_HOME=`pwd`/test-rustup
+  export CARGO_HOME=`pwd`/test-rustup
+
+  curl https://sh.rustup.rs -sSf | sh -s -- -y --no-modify-path
+
+  export PATH=$RUSTUP_HOME/bin:$PATH
+  source $RUSTUP_HOME/env
+
+  # build and test rust
+  pushd rust
+
+  # raises on any formatting errors (disabled, because RC1 has a couple)
+  # rustup component add rustfmt-preview
+  # cargo fmt --all -- --check
+  # raises on any warnings
+  cargo rustc -- -D warnings
+
+  cargo build
+  cargo test
+
   popd
 }
 
@@ -237,26 +320,30 @@ if [ "$(uname)" == "Darwin" ]; then
 else
   NPROC=$(nproc)
 fi
-VERSION=$1
-RC_NUMBER=$2
-
-TARBALL=apache-arrow-$1.tar.gz
 
 import_gpg_keys
 
-DIST_NAME="apache-arrow-${VERSION}"
-fetch_archive $DIST_NAME
-tar xvzf ${DIST_NAME}.tar.gz
-cd ${DIST_NAME}
+if [ "$ARTIFACT" == "source" ]; then
+  TARBALL=apache-arrow-$1.tar.gz
+  DIST_NAME="apache-arrow-${VERSION}"
 
-test_package_java
-setup_miniconda
-test_and_install_cpp
-test_js
-test_integration
-test_glib
-install_parquet_cpp
-test_python
+  fetch_archive $DIST_NAME
+  tar xvzf ${DIST_NAME}.tar.gz
+  cd ${DIST_NAME}
+
+  test_package_java
+  setup_miniconda
+  test_and_install_cpp
+  test_python
+  test_glib
+  test_ruby
+  test_js
+  test_integration
+  test_rust
+else
+  # takes longer on slow network
+  verify_binary_artifacts
+fi
 
 echo 'Release candidate looks good!'
 exit 0

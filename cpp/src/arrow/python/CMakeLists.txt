@@ -19,21 +19,27 @@
 # arrow_python
 #######################################
 
+find_package(PythonLibsNew REQUIRED)
+find_package(NumPy REQUIRED)
+
+add_custom_target(arrow_python)
+
 set(ARROW_PYTHON_SRCS
   arrow_to_pandas.cc
-  arrow_to_python.cc
   benchmark.cc
-  builtin_convert.cc
   common.cc
   config.cc
   decimal.cc
+  deserialize.cc
   helpers.cc
+  inference.cc
   init.cc
   io.cc
   numpy_convert.cc
   numpy_to_arrow.cc
   python_to_arrow.cc
   pyarrow.cc
+  serialize.cc
 )
 
 if ("${COMPILER_FAMILY}" STREQUAL "clang")
@@ -48,19 +54,34 @@ set(ARROW_PYTHON_SHARED_LINK_LIBS
   ${PYTHON_OTHER_LIBS}
 )
 
-if (MSVC)
+if (WIN32)
   set(ARROW_PYTHON_SHARED_LINK_LIBS
     ${ARROW_PYTHON_SHARED_LINK_LIBS}
     ${PYTHON_LIBRARIES}
     )
 endif()
 
+set(ARROW_PYTHON_INCLUDES
+  ${NUMPY_INCLUDE_DIRS}
+  ${PYTHON_INCLUDE_DIRS})
+
 ADD_ARROW_LIB(arrow_python
   SOURCES ${ARROW_PYTHON_SRCS}
+  OUTPUTS ARROW_PYTHON_LIBRARIES
   SHARED_LINK_FLAGS ""
   SHARED_LINK_LIBS ${ARROW_PYTHON_SHARED_LINK_LIBS}
   STATIC_LINK_LIBS "${PYTHON_OTHER_LIBS}"
+  EXTRA_INCLUDES "${ARROW_PYTHON_INCLUDES}"
 )
+
+foreach(LIB_TARGET ${ARROW_PYTHON_LIBRARIES})
+  target_compile_definitions(${LIB_TARGET}
+    PRIVATE ARROW_EXPORTING)
+endforeach()
+
+if (ARROW_BUILD_STATIC AND MSVC)
+  target_compile_definitions(arrow_python_static PUBLIC ARROW_STATIC)
+endif()
 
 if ("${COMPILER_FAMILY}" STREQUAL "clang")
   # Clang, be quiet. Python C API has lots of macros
@@ -73,13 +94,13 @@ endif()
 install(FILES
   api.h
   arrow_to_pandas.h
-  arrow_to_python.h
   benchmark.h
-  builtin_convert.h
   common.h
   config.h
   decimal.h
+  deserialize.h
   helpers.h
+  inference.h
   init.h
   io.h
   iterators.h
@@ -89,6 +110,7 @@ install(FILES
   python_to_arrow.h
   platform.h
   pyarrow.h
+  serialize.h
   type_traits.h
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/arrow/python")
 
@@ -107,7 +129,9 @@ if (ARROW_BUILD_TESTS)
 	util/test_main.cc)
 
   target_link_libraries(arrow_python_test_main
-    gtest)
+    gtest_static)
+  target_include_directories(arrow_python_test_main SYSTEM PUBLIC
+    ${ARROW_PYTHON_INCLUDES})
 
   if (APPLE)
 	target_link_libraries(arrow_python_test_main
@@ -122,14 +146,15 @@ if (ARROW_BUILD_TESTS)
 
   set(ARROW_PYTHON_MIN_TEST_LIBS
     arrow_python_test_main
-    arrow_python_static
+    arrow_python_shared
     arrow_shared)
 
   set(ARROW_PYTHON_TEST_LINK_LIBS ${ARROW_PYTHON_MIN_TEST_LIBS})
 
   ADD_ARROW_TEST(python-test
     STATIC_LINK_LIBS "${ARROW_PYTHON_TEST_LINK_LIBS}"
+    EXTRA_LINK_LIBS ${PYTHON_LIBRARIES}
+    EXTRA_INCLUDES "${ARROW_PYTHON_INCLUDES}"
+    LABELS "arrow_python"
     NO_VALGRIND)
-  target_link_libraries(python-test
-    ${PYTHON_LIBRARIES})
 endif()

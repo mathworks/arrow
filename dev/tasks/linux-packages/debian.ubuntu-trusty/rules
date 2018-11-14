@@ -11,7 +11,10 @@ export DEB_BUILD_MAINT_OPTIONS=reproducible=-timeless
 BUILD_TYPE=release
 
 %:
-	dh $@ --with gir
+	dh $@ --with gir,autoreconf
+
+override_dh_autoreconf:
+	cd c_glib && ./autogen.sh
 
 override_dh_auto_configure:
 	dh_auto_configure \
@@ -20,12 +23,13 @@ override_dh_auto_configure:
 	  -- \
 	  -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
 	  -DARROW_BUILD_TESTS=OFF \
-	  -DARROW_ORC=ON
+	  -DARROW_ORC=ON \
+	  -DARROW_PARQUET=ON
 	dh_auto_configure \
 	  --sourcedirectory=c_glib \
 	  --builddirectory=c_glib_build \
 	  -- \
-	  --with-arrow-cpp-build-dir=$${PWD}/cpp_build \
+	  --with-arrow-cpp-build-dir=$(CURDIR)/cpp_build \
 	  --with-arrow-cpp-build-type=$(BUILD_TYPE) \
 	  --enable-gtk-doc \
 	  --with-html-dir=\$${prefix}/share/doc/libarrow-glib-doc
@@ -35,7 +39,7 @@ override_dh_auto_build:
 	  --sourcedirectory=cpp			\
 	  --builddirectory=cpp_build
 	env							\
-	  LD_LIBRARY_PATH=$${PWD}/cpp_build/$(BUILD_TYPE)	\
+	  LD_LIBRARY_PATH=$(CURDIR)/cpp_build/$(BUILD_TYPE)	\
 	    dh_auto_build					\
 	      --sourcedirectory=c_glib				\
 	      --builddirectory=c_glib_build

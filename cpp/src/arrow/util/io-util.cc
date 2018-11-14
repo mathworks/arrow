@@ -22,15 +22,17 @@
 
 #define _FILE_OFFSET_BITS 64
 
-#include "arrow/io/windows_compatibility.h"
+#include "arrow/util/windows_compatibility.h"  // IWYU pragma: keep
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdint>
+#include <cstring>
 #include <sstream>
+#include <string>
 
 #include <fcntl.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>  // IWYU pragma: keep
 
@@ -61,9 +63,14 @@
 // nothing
 #endif
 
-#ifndef _MSC_VER  // POSIX-like platforms
+#ifdef _WIN32  // Windows
+#include "arrow/io/mman.h"
+#undef Realloc
+#undef Free
+#else  // POSIX-like platforms
+#include <sys/mman.h>
 #include <unistd.h>
-#endif  // _MSC_VER
+#endif
 
 // POSIX systems do not have this
 #ifndef O_BINARY
@@ -85,6 +92,7 @@
 
 #endif
 
+#include "arrow/status.h"
 #include "arrow/util/io-util.h"
 
 namespace arrow {
@@ -149,8 +157,8 @@ Status FileOpenReadable(const PlatformFilename& file_name, int* fd) {
   return CheckFileOpResult(ret, errno_actual, file_name, "open local");
 }
 
-Status FileOpenWriteable(const PlatformFilename& file_name, bool write_only,
-                         bool truncate, bool append, int* fd) {
+Status FileOpenWritable(const PlatformFilename& file_name, bool write_only, bool truncate,
+                        bool append, int* fd) {
   int ret, errno_actual;
 
 #if defined(_MSC_VER)
@@ -217,7 +225,7 @@ Status FileTell(int fd, int64_t* pos) {
 
 Status CreatePipe(int fd[2]) {
   int ret;
-#if defined(_MSC_VER)
+#if defined(_WIN32)
   ret = _pipe(fd, 4096, _O_BINARY);
 #else
   ret = pipe(fd);
@@ -228,6 +236,84 @@ Status CreatePipe(int fd[2]) {
                            std::string(strerror(errno)));
   }
   return Status::OK();
+}
+
+//
+// Compatible way to remap a memory map
+//
+
+Status MemoryMapRemap(void* addr, size_t old_size, size_t new_size, int fildes,
+                      void** new_addr) {
+  // should only be called with writable files
+  *new_addr = MAP_FAILED;
+#ifdef _WIN32
+  // flags are ignored on windows
+  HANDLE fm, h;
+
+  if (!UnmapViewOfFile(addr)) {
+    errno = __map_mman_error(GetLastError(), EPERM);
+    std::stringstream ss;
+    ss << "UnmapViewOfFile failed: " << std::strerror(errno);
+    return Status::IOError(ss.str());
+  }
+
+  h = reinterpret_cast<HANDLE>(_get_osfhandle(fildes));
+  if (h == INVALID_HANDLE_VALUE) {
+    errno = __map_mman_error(GetLastError(), EPERM);
+    std::stringstream ss;
+    ss << "cannot get file handle: " << std::strerror(errno);
+    return Status::IOError(ss.str());
+  }
+
+  LONG new_size_low = static_cast<LONG>(new_size & 0xFFFFFFFFL);
+  LONG new_size_high = static_cast<LONG>((new_size >> 32) & 0xFFFFFFFFL);
+
+  SetFilePointer(h, new_size_low, &new_size_high, FILE_BEGIN);
+  SetEndOfFile(h);
+  fm = CreateFileMapping(h, NULL, PAGE_READWRITE, 0, 0, "");
+  if (fm == NULL) {
+    errno = __map_mman_error(GetLastError(), EPERM);
+    std::stringstream ss;
+    ss << "mremap failed: " << std::strerror(errno);
+    return Status::IOError(ss.str());
+  }
+  *new_addr = MapViewOfFile(fm, FILE_MAP_WRITE, 0, 0, new_size);
+  CloseHandle(fm);
+  if (new_addr == NULL) {
+    errno = __map_mman_error(GetLastError(), EPERM);
+    std::stringstream ss;
+    ss << "mremap failed: " << std::strerror(errno);
+    return Status::IOError(ss.str());
+  }
+  return Status::OK();
+#else
+#ifdef __APPLE__
+  // we have to close the mmap first, truncate the file to the new size
+  // and recreate the mmap
+  if (munmap(addr, old_size) == -1) {
+    std::stringstream ss;
+    ss << "munmap failed: " << std::strerror(errno);
+    return Status::IOError(ss.str());
+  }
+  if (ftruncate(fildes, new_size) == -1) {
+    std::stringstream ss;
+    ss << "cannot truncate file: " << std::strerror(errno);
+    return Status::IOError(ss.str());
+  }
+  // we set READ / WRITE flags on the new map, since we could only have
+  // unlarged a RW map in the first place
+  *new_addr = mmap(NULL, new_size, PROT_READ | PROT_WRITE, MAP_SHARED, fildes, 0);
+  return Status::OK();
+#else
+  if (ftruncate(fildes, new_size) == -1) {
+    std::stringstream ss;
+    ss << "file truncate failed: " << std::strerror(errno);
+    return Status::IOError(ss.str());
+  }
+  *new_addr = mremap(addr, old_size, new_size, MREMAP_MAYMOVE);
+  return Status::OK();
+#endif
+#endif
 }
 
 //
@@ -296,7 +382,7 @@ Status FileGetSize(int fd, int64_t* size) {
 //
 
 static inline int64_t pread_compat(int fd, void* buf, int64_t nbytes, int64_t pos) {
-#if defined(_MSC_VER)
+#if defined(_WIN32)
   HANDLE handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
   DWORD dwBytesRead = 0;
   OVERLAPPED overlapped = {0};
@@ -413,7 +499,7 @@ Status FileWrite(int fd, const uint8_t* buffer, const int64_t nbytes) {
 Status FileTruncate(int fd, const int64_t size) {
   int ret, errno_actual;
 
-#ifdef _MSC_VER
+#ifdef _WIN32
   errno_actual = _chsize_s(fd, static_cast<size_t>(size));
   ret = errno_actual == 0 ? 0 : -1;
 #else

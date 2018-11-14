@@ -66,6 +66,9 @@ bool ChunkedArray::Equals(const ChunkedArray& other) const {
   if (null_count_ != other.null_count()) {
     return false;
   }
+  if (length_ == 0) {
+    return type_->Equals(other.type_);
+  }
 
   // Check contents of the underlying arrays. This checks for equality of
   // the underlying data independently of the chunk size.
@@ -186,6 +189,9 @@ Column::Column(const std::shared_ptr<Field>& field, const std::shared_ptr<Array>
 }
 
 Column::Column(const std::string& name, const std::shared_ptr<Array>& data)
+    : Column(::arrow::field(name, data->type()), data) {}
+
+Column::Column(const std::string& name, const std::shared_ptr<ChunkedArray>& data)
     : Column(::arrow::field(name, data->type()), data) {}
 
 Column::Column(const std::shared_ptr<Field>& field,
@@ -406,7 +412,7 @@ Status Table::FromRecordBatches(const std::shared_ptr<Schema>& schema,
   const int nbatches = static_cast<int>(batches.size());
   const int ncolumns = static_cast<int>(schema->num_fields());
 
-  for (int i = 1; i < nbatches; ++i) {
+  for (int i = 0; i < nbatches; ++i) {
     if (!batches[i]->schema()->Equals(*schema, false)) {
       std::stringstream ss;
       ss << "Schema at index " << static_cast<int>(i) << " was different: \n"
@@ -451,7 +457,7 @@ Status ConcatenateTables(const std::vector<std::shared_ptr<Table>>& tables,
   const int ncolumns = static_cast<int>(schema->num_fields());
 
   for (int i = 1; i < ntables; ++i) {
-    if (!tables[i]->schema()->Equals(*schema)) {
+    if (!tables[i]->schema()->Equals(*schema, false)) {
       std::stringstream ss;
       ss << "Schema at index " << static_cast<int>(i) << " was different: \n"
          << schema->ToString() << "\nvs\n"

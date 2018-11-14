@@ -1,13 +1,12 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,10 +20,15 @@ package org.apache.arrow.vector;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import io.netty.buffer.ArrowBuf;
+import java.nio.charset.StandardCharsets;
+
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
-import org.apache.arrow.vector.complex.*;
+import org.apache.arrow.vector.complex.FixedSizeListVector;
+import org.apache.arrow.vector.complex.ListVector;
+import org.apache.arrow.vector.complex.NonNullableStructVector;
+import org.apache.arrow.vector.complex.StructVector;
+import org.apache.arrow.vector.complex.UnionVector;
 import org.apache.arrow.vector.types.Types.MinorType;
 import org.apache.arrow.vector.types.pojo.ArrowType.FixedSizeList;
 import org.apache.arrow.vector.types.pojo.ArrowType.Int;
@@ -34,7 +38,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
+import io.netty.buffer.ArrowBuf;
 
 public class TestVectorReset {
 
@@ -93,8 +97,10 @@ public class TestVectorReset {
 
   @Test
   public void testListTypeReset() {
-    try (final ListVector variableList = new ListVector("VarList", allocator, FieldType.nullable(MinorType.INT.getType()), null);
-         final FixedSizeListVector fixedList = new FixedSizeListVector("FixedList", allocator, FieldType.nullable(new FixedSizeList(2)), null)
+    try (final ListVector variableList =
+           new ListVector("VarList", allocator, FieldType.nullable(MinorType.INT.getType()), null);
+         final FixedSizeListVector fixedList =
+           new FixedSizeListVector("FixedList", allocator, FieldType.nullable(new FixedSizeList(2)), null)
     ) {
       // ListVector
       variableList.allocateNewSafe();
@@ -114,12 +120,15 @@ public class TestVectorReset {
 
   @Test
   public void testStructTypeReset() {
-    try (final NonNullableStructVector nonNullableStructVector = new NonNullableStructVector("Struct", allocator, FieldType.nullable(MinorType.INT.getType()), null);
-         final StructVector structVector = new StructVector("NullableStruct", allocator, FieldType.nullable(MinorType.INT.getType()), null)
+    try (final NonNullableStructVector nonNullableStructVector =
+           new NonNullableStructVector("Struct", allocator, FieldType.nullable(MinorType.INT.getType()), null);
+         final StructVector structVector =
+           new StructVector("NullableStruct", allocator, FieldType.nullable(MinorType.INT.getType()), null)
     ) {
       // NonNullableStructVector
       nonNullableStructVector.allocateNewSafe();
-      IntVector structChild = nonNullableStructVector.addOrGet("child", FieldType.nullable(new Int(32, true)), IntVector.class);
+      IntVector structChild = nonNullableStructVector
+          .addOrGet("child", FieldType.nullable(new Int(32, true)), IntVector.class);
       structChild.setNull(0);
       nonNullableStructVector.setValueCount(1);
       resetVectorAndVerify(nonNullableStructVector, nonNullableStructVector.getBuffers(false));

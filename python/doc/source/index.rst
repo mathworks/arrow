@@ -15,8 +15,8 @@
 .. specific language governing permissions and limitations
 .. under the License.
 
-Apache Arrow (Python)
-=====================
+Python bindings for Apache Arrow
+================================
 
 Apache Arrow is a cross-language development platform for in-memory data. It
 specifies a standardized language-independent columnar memory format for flat
@@ -45,7 +45,9 @@ structures.
    ipc
    filesystems
    plasma
+   numpy
    pandas
+   csv
    parquet
    extending
    api

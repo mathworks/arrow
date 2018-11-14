@@ -16,6 +16,7 @@
 # under the License.
 
 # distutils: language = c++
+# cython: language_level = 3
 
 from pyarrow.includes.common cimport *
 from pyarrow.includes.libarrow cimport (CArray, CSchema, CStatus,
@@ -134,7 +135,7 @@ cdef extern from "parquet/api/schema.h" namespace "parquet" nogil:
         c_bool Equals(const SchemaDescriptor& other)
         int num_columns()
 
-    cdef c_string FormatStatValue(ParquetType parquet_type, const char* val)
+    cdef c_string FormatStatValue(ParquetType parquet_type, c_string val)
 
 
 cdef extern from "parquet/api/reader.h" namespace "parquet" nogil:
@@ -288,7 +289,7 @@ cdef extern from "parquet/arrow/reader.h" namespace "parquet::arrow" nogil:
 
         const ParquetFileReader* parquet_reader()
 
-        void set_num_threads(int num_threads)
+        void set_use_threads(c_bool use_threads)
 
 
 cdef extern from "parquet/arrow/schema.h" namespace "parquet::arrow" nogil:
@@ -323,5 +324,7 @@ cdef extern from "parquet/arrow/writer.h" namespace "parquet::arrow" nogil:
             Builder* disable_deprecated_int96_timestamps()
             Builder* enable_deprecated_int96_timestamps()
             Builder* coerce_timestamps(TimeUnit unit)
+            Builder* allow_truncated_timestamps()
+            Builder* disallow_truncated_timestamps()
             shared_ptr[ArrowWriterProperties] build()
         c_bool support_deprecated_int96_timestamps()

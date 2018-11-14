@@ -15,13 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
+require "English"
 require "open-uri"
 require "time"
 
 class PackageTask
   include Rake::DSL
 
-  def initialize(package, version, release_time)
+  def initialize(package, version, release_time, options={})
     @package = package
     @version = version
     @release_time = release_time
@@ -31,6 +32,26 @@ class PackageTask
     @full_archive_name = File.expand_path(@archive_name)
 
     @rpm_package = @package
+    case @version
+    when /-((dev|rc)\d+)\z/
+      base_version = $PREMATCH
+      sub_version = $1
+      type = $2
+      if type == "rc" and options[:rc_build_type] == :release
+        @deb_upstream_version = base_version
+        @rpm_version = base_version
+        @rpm_release = "1"
+      else
+        @deb_upstream_version = "#{base_version}~#{sub_version}"
+        @rpm_version = base_version
+        @rpm_release = "0.#{sub_version}"
+      end
+    else
+      @deb_upstream_version = @version
+      @rpm_version = @version
+      @rpm_release = "1"
+    end
+    @deb_release = "1"
   end
 
   def define
@@ -55,18 +76,29 @@ class PackageTask
     ENV["DEBUG"] != "no"
   end
 
+  def git_directory?(directory)
+    candidate_paths = [".git", "HEAD"]
+    candidate_paths.any? do |candidate_path|
+      File.exist?(File.join(directory, candidate_path))
+    end
+  end
+
   def latest_commit_time(git_directory)
+    return nil unless git_directory?(git_directory)
     cd(git_directory) do
       return Time.iso8601(`git log -n 1 --format=%aI`.chomp).utc
     end
   end
 
-  def download(url, download_dir)
-    base_name = url.split("/").last
-    absolute_output_path = File.join(download_dir, base_name)
+  def download(url, output_path)
+    if File.directory?(output_path)
+      base_name = url.split("/").last
+      output_path = File.join(output_path, base_name)
+    end
+    absolute_output_path = File.expand_path(output_path)
 
     unless File.exist?(absolute_output_path)
-      mkdir_p(download_dir)
+      mkdir_p(File.dirname(absolute_output_path))
       rake_output_message "Downloading... #{url}"
       open(url) do |downloaded_file|
         File.open(absolute_output_path, "wb") do |output_file|
@@ -122,14 +154,17 @@ class PackageTask
         tmp_dir = "#{yum_dir}/tmp"
         rm_rf(tmp_dir)
         mkdir_p(tmp_dir)
-        cp(@archive_name, tmp_dir)
+        rpm_archive_name = "#{@package}-#{@rpm_version}.tar.gz"
+        cp(@archive_name,
+           File.join(tmp_dir, rpm_archive_name))
 
         env_sh = "#{yum_dir}/env.sh"
         File.open(env_sh, "w") do |file|
           file.puts(<<-ENV)
-SOURCE_ARCHIVE=#{@archive_name}
+SOURCE_ARCHIVE=#{rpm_archive_name}
 PACKAGE=#{@rpm_package}
-VERSION=#{@version}
+VERSION=#{@rpm_version}
+RELEASE=#{@rpm_release}
           ENV
         end
 
@@ -143,7 +178,9 @@ VERSION=#{@version}
           when "PACKAGE"
             @rpm_package
           when "VERSION"
-            @version
+            @rpm_version
+          when "RELEASE"
+            @rpm_release
           else
             matched
           end
@@ -189,7 +226,9 @@ VERSION=#{@version}
         tmp_dir = "#{apt_dir}/tmp"
         rm_rf(tmp_dir)
         mkdir_p(tmp_dir)
-        cp(@archive_name, tmp_dir)
+        deb_archive_name = "#{@package}-#{@deb_upstream_version}.tar.gz"
+        cp(@archive_name,
+           File.join(tmp_dir, deb_archive_name))
         Dir.glob("debian*") do |debian_dir|
           cp_r(debian_dir, "#{tmp_dir}/#{debian_dir}")
         end
@@ -198,7 +237,7 @@ VERSION=#{@version}
         File.open(env_sh, "w") do |file|
           file.puts(<<-ENV)
 PACKAGE=#{@package}
-VERSION=#{@version}
+VERSION=#{@deb_upstream_version}
           ENV
         end
 
@@ -210,11 +249,12 @@ VERSION=#{@version}
               "debian-stretch",
               "ubuntu-trusty",
               "ubuntu-xenial",
-              "ubuntu-artful",
               "ubuntu-bionic",
+              "ubuntu-cosmic",
             ]
           end
           targets.each do |target|
+            next unless Dir.exist?(target)
             id = target
             if parallel_build?
               threads << Thread.new(id) do |local_id|
@@ -242,13 +282,8 @@ VERSION=#{@version}
       task :update do
         update_debian_changelog
         update_spec
-        update_descriptor
       end
     end
-  end
-
-  def package_version
-    "#{@version}-1"
   end
 
   def package_changelog_message
@@ -279,7 +314,7 @@ VERSION=#{@version}
     Dir.glob("debian*") do |debian_dir|
       update_content("#{debian_dir}/changelog") do |content|
         <<-CHANGELOG.rstrip
-#{@package} (#{package_version}) unstable; urgency=low
+#{@package} (#{@deb_upstream_version}-#{@deb_release}) unstable; urgency=low
 
   * New upstream release.
 
@@ -296,7 +331,7 @@ VERSION=#{@version}
     update_content("yum/#{@rpm_package}.spec.in") do |content|
       content = content.sub(/^(%changelog\n)/, <<-CHANGELOG)
 %changelog
-* #{release_time} #{packager_name} <#{packager_email}> - #{package_version}
+* #{release_time} #{packager_name} <#{packager_email}> - #{@rpm_version}-#{@rpm_release}
 - #{package_changelog_message}
 
       CHANGELOG
@@ -305,13 +340,4 @@ VERSION=#{@version}
     end
   end
 
-  def update_descriptor
-    Dir.glob("**/descriptor.json") do |descriptor_json|
-      update_content(descriptor_json) do |content|
-        content = content.sub(/"name": "\d+\.\d+\.\d+.*?"/) do
-          "\"name\": \"#{@version}\""
-        end
-      end
-    end
-  end
 end

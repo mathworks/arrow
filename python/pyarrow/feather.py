@@ -24,9 +24,8 @@ import warnings
 
 from pyarrow.compat import pdapi
 from pyarrow.lib import FeatherError  # noqa
-from pyarrow.lib import RecordBatch, Table, concat_tables
+from pyarrow.lib import RecordBatch, concat_tables
 import pyarrow.lib as ext
-from .util import _deprecate_nthreads
 
 
 try:
@@ -51,25 +50,20 @@ class FeatherReader(ext.FeatherReader):
         return self.read_pandas(*args, **kwargs)
 
     def read_table(self, columns=None):
-        if columns is not None:
-            column_set = set(columns)
-        else:
-            column_set = None
+        if columns is None:
+            return self._read()
+        column_types = [type(column) for column in columns]
+        if all(map(lambda t: t == int, column_types)):
+            return self._read_indices(columns)
+        elif all(map(lambda t: t == str, column_types)):
+            return self._read_names(columns)
 
-        columns = []
-        names = []
-        for i in range(self.num_columns):
-            name = self.get_column_name(i)
-            if column_set is None or name in column_set:
-                col = self.get_column(i)
-                columns.append(col)
-                names.append(name)
+        column_type_names = [t.__name__ for t in column_types]
+        raise TypeError("Columns must be indices or names. "
+                        "Got columns {} of types {}"
+                        .format(columns, column_type_names))
 
-        table = Table.from_arrays(columns, names=names)
-        return table
-
-    def read_pandas(self, columns=None, nthreads=None, use_threads=False):
-        use_threads = _deprecate_nthreads(use_threads, nthreads)
+    def read_pandas(self, columns=None, use_threads=True):
         return self.read_table(columns=columns).to_pandas(
             use_threads=use_threads)
 
@@ -145,7 +139,7 @@ class FeatherDataset(object):
                              .format(piece, self.schema,
                                      table.schema))
 
-    def read_pandas(self, columns=None, nthreads=None, use_threads=False):
+    def read_pandas(self, columns=None, use_threads=True):
         """
         Read multiple Parquet files as a single pandas DataFrame
 
@@ -153,15 +147,14 @@ class FeatherDataset(object):
         ----------
         columns : List[str]
             Names of columns to read from the file
-        nthreads : int, default 1
-            Number of columns to read in parallel.
+        use_threads : boolean, default True
+            Use multiple threads when converting to pandas
 
         Returns
         -------
         pandas.DataFrame
             Content of the file as a pandas DataFrame (of columns)
         """
-        use_threads = _deprecate_nthreads(use_threads, nthreads)
         return self.read_table(columns=columns).to_pandas(
             use_threads=use_threads)
 
@@ -192,7 +185,7 @@ def write_feather(df, dest):
         raise
 
 
-def read_feather(source, columns=None, nthreads=None, use_threads=False):
+def read_feather(source, columns=None, use_threads=True):
     """
     Read a pandas.DataFrame from Feather format
 
@@ -202,14 +195,13 @@ def read_feather(source, columns=None, nthreads=None, use_threads=False):
     columns : sequence, optional
         Only read a specific set of columns. If not provided, all columns are
         read
-    use_threads: bool, default False
+    use_threads: bool, default True
         Whether to parallelize reading using multiple threads
 
     Returns
     -------
     df : pandas.DataFrame
     """
-    use_threads = _deprecate_nthreads(use_threads, nthreads)
     reader = FeatherReader(source)
     return reader.read_pandas(columns=columns, use_threads=use_threads)
 

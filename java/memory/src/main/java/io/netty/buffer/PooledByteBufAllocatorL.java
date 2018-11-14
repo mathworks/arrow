@@ -1,14 +1,13 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- * <p>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,15 +17,15 @@
 
 package io.netty.buffer;
 
-import io.netty.util.internal.StringUtil;
-
-import org.apache.arrow.memory.OutOfMemoryException;
+import static org.apache.arrow.memory.util.AssertionUtil.ASSERT_ENABLED;
 
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static org.apache.arrow.memory.util.AssertionUtil.ASSERT_ENABLED;
+import org.apache.arrow.memory.OutOfMemoryException;
+
+import io.netty.util.internal.StringUtil;
 
 /**
  * The base allocator that we use for all of Arrow's memory management. Returns
@@ -34,8 +33,7 @@ import static org.apache.arrow.memory.util.AssertionUtil.ASSERT_ENABLED;
  */
 public class PooledByteBufAllocatorL {
 
-  private static final org.slf4j.Logger memoryLogger = org.slf4j.LoggerFactory.getLogger("arrow" +
-      ".allocator");
+  private static final org.slf4j.Logger memoryLogger = org.slf4j.LoggerFactory.getLogger("arrow.allocator");
 
   private static final int MEMORY_LOGGER_FREQUENCY_SECONDS = 60;
   public final UnsafeDirectLittleEndian empty;
@@ -136,8 +134,7 @@ public class PooledByteBufAllocatorL {
         f.setAccessible(true);
         this.directArenas = (PoolArena<ByteBuffer>[]) f.get(this);
       } catch (Exception e) {
-        throw new RuntimeException("Failure while initializing allocator.  Unable to retrieve " +
-            "direct arenas field.", e);
+        throw new RuntimeException("Failure while initializing allocator.  Unable to retrieve direct arenas field.", e);
       }
 
       this.chunkSize = directArenas[0].chunkSize;
@@ -212,8 +209,7 @@ public class PooledByteBufAllocatorL {
 
     private void validate(int initialCapacity, int maxCapacity) {
       if (initialCapacity < 0) {
-        throw new IllegalArgumentException("initialCapacity: " + initialCapacity + " (expectd: " +
-            "0+)");
+        throw new IllegalArgumentException("initialCapacity: " + initialCapacity + " (expected: 0+)");
       }
       if (initialCapacity > maxCapacity) {
         throw new IllegalArgumentException(String.format(

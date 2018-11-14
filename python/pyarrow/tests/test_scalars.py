@@ -31,6 +31,12 @@ class TestScalars(unittest.TestCase):
         with pytest.raises(Exception):
             pa.NAType()
 
+    def test_nulls(self):
+        arr = pa.array([None, None])
+        for v in arr:
+            assert v is pa.NA
+            assert v.as_py() is None
+
     def test_bool(self):
         arr = pa.array([True, None, False, None])
 
@@ -102,18 +108,20 @@ class TestScalars(unittest.TestCase):
     def test_bytes(self):
         arr = pa.array([b'foo', None, u('bar')])
 
-        v = arr[0]
-        assert isinstance(v, pa.BinaryValue)
-        assert v.as_py() == b'foo'
-        assert str(v) == str(b"foo")
-        assert repr(v) == repr(b"foo")
-        assert v == b'foo'
+        def check_value(v, expected):
+            assert isinstance(v, pa.BinaryValue)
+            assert v.as_py() == expected
+            assert str(v) == str(expected)
+            assert repr(v) == repr(expected)
+            assert v == expected
+            assert v != b'xxxxx'
+            buf = v.as_buffer()
+            assert isinstance(buf, pa.Buffer)
+            assert buf.to_pybytes() == expected
 
+        check_value(arr[0], b'foo')
         assert arr[1] is pa.NA
-
-        v = arr[2].as_py()
-        assert v == b'bar'
-        assert isinstance(v, bytes)
+        check_value(arr[2], b'bar')
 
     def test_fixed_size_bytes(self):
         data = [b'foof', None, b'barb']
@@ -154,14 +162,15 @@ class TestScalars(unittest.TestCase):
     def test_timestamp(self):
         arr = pd.date_range('2000-01-01 12:34:56', periods=10).values
 
-        units = ['s', 'ms', 'us', 'ns']
+        units = ['ns', 'us', 'ms', 's']
 
-        for unit in units:
+        for i, unit in enumerate(units):
             dtype = 'datetime64[{0}]'.format(unit)
             arrow_arr = pa.Array.from_pandas(arr.astype(dtype))
             expected = pd.Timestamp('2000-01-01 12:34:56')
 
             assert arrow_arr[0].as_py() == expected
+            assert arrow_arr[0].value * 1000**i == expected.value
 
             tz = 'America/New_York'
             arrow_type = pa.timestamp(unit, tz=tz)
@@ -174,6 +183,7 @@ class TestScalars(unittest.TestCase):
                         .tz_convert(tz))
 
             assert arrow_arr[0].as_py() == expected
+            assert arrow_arr[0].value * 1000**i == expected.value
 
     def test_dictionary(self):
         colors = ['red', 'green', 'blue']

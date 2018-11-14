@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from collections import OrderedDict
 import pickle
 
 import pytest
@@ -206,6 +207,7 @@ def test_schema():
     sch = pa.schema(fields)
 
     assert sch.names == ['foo', 'bar', 'baz']
+    assert sch.types == [pa.int32(), pa.string(), pa.list_(pa.int8())]
 
     assert len(sch) == 3
     assert sch[0].name == 'foo'
@@ -213,6 +215,40 @@ def test_schema():
     assert sch.field_by_name('foo').name == 'foo'
     assert sch.field_by_name('foo').type == fields[0].type
 
+    assert repr(sch) == """\
+foo: int32
+bar: string
+baz: list<item: int8>
+  child 0, item: int8"""
+
+
+def test_schema_from_tuples():
+    fields = [
+        ('foo', pa.int32()),
+        ('bar', pa.string()),
+        ('baz', pa.list_(pa.int8())),
+    ]
+    sch = pa.schema(fields)
+    assert sch.names == ['foo', 'bar', 'baz']
+    assert sch.types == [pa.int32(), pa.string(), pa.list_(pa.int8())]
+    assert len(sch) == 3
+    assert repr(sch) == """\
+foo: int32
+bar: string
+baz: list<item: int8>
+  child 0, item: int8"""
+
+
+def test_schema_from_mapping():
+    fields = OrderedDict([
+        ('foo', pa.int32()),
+        ('bar', pa.string()),
+        ('baz', pa.list_(pa.int8())),
+    ])
+    sch = pa.schema(fields)
+    assert sch.names == ['foo', 'bar', 'baz']
+    assert sch.types == [pa.int32(), pa.string(), pa.list_(pa.int8())]
+    assert len(sch) == 3
     assert repr(sch) == """\
 foo: int32
 bar: string
@@ -342,7 +378,12 @@ def test_schema_repr_with_dictionaries():
     expected = (
         """\
 one: dictionary<values=string, indices=int16, ordered=0>
-  dictionary: ["foo", "bar", "baz"]
+  dictionary:
+    [
+      "foo",
+      "bar",
+      "baz"
+    ]
 two: int32""")
 
     assert repr(sch) == expected

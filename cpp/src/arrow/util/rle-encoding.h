@@ -29,6 +29,7 @@
 #include "arrow/util/macros.h"
 
 namespace arrow {
+namespace util {
 
 /// Utility classes to do run length encoding (RLE) for fixed bit width values.  If runs
 /// are sufficiently long, RLE is used, otherwise, the values are just bit-packed
@@ -71,7 +72,7 @@ namespace arrow {
 /// Examples with bit-width 1 (eg encoding booleans):
 /// ----------------------------------------
 /// 100 1s followed by 100 0s:
-/// <varint(100 << 1)> <1, padded to 1 byte>  <varint(100 << 1)> <0, padded to 1 byte>
+/// <varint(100 << 1)> <1, padded to 1 byte> <varint(100 << 1)> <0, padded to 1 byte>
 ///  - (total 4 bytes)
 //
 /// alternating 1s and 0s (200 total):
@@ -126,7 +127,7 @@ class RleDecoder {
                              int64_t valid_bits_offset);
 
  protected:
-  BitReader bit_reader_;
+  BitUtil::BitReader bit_reader_;
   /// Number of bits needed to encode the value. Must be between 0 and 64.
   int bit_width_;
   uint64_t current_value_;
@@ -169,10 +170,11 @@ class RleEncoder {
   static int MinBufferSize(int bit_width) {
     /// 1 indicator byte and MAX_VALUES_PER_LITERAL_RUN 'bit_width' values.
     int max_literal_run_size =
-        1 + static_cast<int>(BitUtil::Ceil(MAX_VALUES_PER_LITERAL_RUN * bit_width, 8));
+        1 +
+        static_cast<int>(BitUtil::BytesForBits(MAX_VALUES_PER_LITERAL_RUN * bit_width));
     /// Up to MAX_VLQ_BYTE_LEN indicator and a single 'bit_width' value.
-    int max_repeated_run_size =
-        BitReader::MAX_VLQ_BYTE_LEN + static_cast<int>(BitUtil::Ceil(bit_width, 8));
+    int max_repeated_run_size = BitUtil::BitReader::MAX_VLQ_BYTE_LEN +
+                                static_cast<int>(BitUtil::BytesForBits(bit_width));
     return std::max(max_literal_run_size, max_repeated_run_size);
   }
 
@@ -181,17 +183,16 @@ class RleEncoder {
     // For a bit_width > 1, the worst case is the repetition of "literal run of length 8
     // and then a repeated run of length 8".
     // 8 values per smallest run, 8 bits per byte
-    // int bytes_per_run = BitUtil::Ceil(bit_width * 8, 8);
     int bytes_per_run = bit_width;
-    int num_runs = static_cast<int>(BitUtil::Ceil(num_values, 8));
+    int num_runs = static_cast<int>(BitUtil::CeilDiv(num_values, 8));
     int literal_max_size = num_runs + num_runs * bytes_per_run;
 
     // In the very worst case scenario, the data is a concatenation of repeated
     // runs of 8 values. Repeated run has a 1 byte varint followed by the
     // bit-packed repeated value
-    int min_repeated_run_size = 1 + static_cast<int>(BitUtil::Ceil(bit_width, 8));
+    int min_repeated_run_size = 1 + static_cast<int>(BitUtil::BytesForBits(bit_width));
     int repeated_max_size =
-        static_cast<int>(BitUtil::Ceil(num_values, 8)) * min_repeated_run_size;
+        static_cast<int>(BitUtil::CeilDiv(num_values, 8)) * min_repeated_run_size;
 
     return std::max(literal_max_size, repeated_max_size);
   }
@@ -241,7 +242,7 @@ class RleEncoder {
   const int bit_width_;
 
   /// Underlying buffer.
-  BitWriter bit_writer_;
+  BitUtil::BitWriter bit_writer_;
 
   /// If true, the buffer is full and subsequent Put()'s will fail.
   bool buffer_full_;
@@ -436,7 +437,7 @@ bool RleDecoder::NextCounts() {
   } else {
     repeat_count_ = indicator_value >> 1;
     bool result =
-        bit_reader_.GetAligned<T>(static_cast<int>(BitUtil::Ceil(bit_width_, 8)),
+        bit_reader_.GetAligned<T>(static_cast<int>(BitUtil::CeilDiv(bit_width_, 8)),
                                   reinterpret_cast<T*>(&current_value_));
     DCHECK(result);
   }
@@ -513,7 +514,7 @@ inline void RleEncoder::FlushRepeatedRun() {
   int32_t indicator_value = repeat_count_ << 1 | 0;
   result &= bit_writer_.PutVlqInt(indicator_value);
   result &= bit_writer_.PutAligned(current_value_,
-                                   static_cast<int>(BitUtil::Ceil(bit_width_, 8)));
+                                   static_cast<int>(BitUtil::CeilDiv(bit_width_, 8)));
   DCHECK(result);
   num_buffered_values_ = 0;
   repeat_count_ = 0;
@@ -596,6 +597,7 @@ inline void RleEncoder::Clear() {
   bit_writer_.Clear();
 }
 
+}  // namespace util
 }  // namespace arrow
 
 #endif  // ARROW_UTIL_RLE_ENCODING_H

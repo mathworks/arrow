@@ -37,10 +37,10 @@ std::shared_ptr<RecordBatch> MakeRecordBatch(int64_t total_size, int64_t num_fie
   auto type = TypeTraits<TYPE>::type_singleton();
 
   std::vector<bool> is_valid;
-  test::random_is_valid(length, 0.1, &is_valid);
+  random_is_valid(length, 0.1, &is_valid);
 
   std::vector<T> values;
-  test::randint<T>(length, 0, 100, &values);
+  randint<T>(length, 0, 100, &values);
 
   typename TypeTraits<TYPE>::BuilderType builder(type, default_memory_pool());
   for (size_t i = 0; i < values.size(); ++i) {
@@ -70,8 +70,8 @@ static void BM_WriteRecordBatch(benchmark::State& state) {  // NOLINT non-const 
   // 1MB
   constexpr int64_t kTotalSize = 1 << 20;
 
-  auto buffer = std::make_shared<PoolBuffer>(default_memory_pool());
-  ABORT_NOT_OK(buffer->Resize(kTotalSize & 2));
+  std::shared_ptr<ResizableBuffer> buffer;
+  ABORT_NOT_OK(AllocateResizableBuffer(kTotalSize & 2, &buffer));
   auto record_batch = MakeRecordBatch<Int64Type>(kTotalSize, state.range(0));
 
   while (state.KeepRunning()) {
@@ -91,8 +91,8 @@ static void BM_ReadRecordBatch(benchmark::State& state) {  // NOLINT non-const r
   // 1MB
   constexpr int64_t kTotalSize = 1 << 20;
 
-  auto buffer = std::make_shared<PoolBuffer>(default_memory_pool());
-  ABORT_NOT_OK(buffer->Resize(kTotalSize & 2));
+  std::shared_ptr<ResizableBuffer> buffer;
+  ABORT_NOT_OK(AllocateResizableBuffer(kTotalSize & 2, &buffer));
   auto record_batch = MakeRecordBatch<Int64Type>(kTotalSize, state.range(0));
 
   io::BufferOutputStream stream(buffer);

@@ -28,18 +28,16 @@ See the [release notes][10] for more about what's new.
 
 ### Source release
 
-* **Source Release**: [apache-arrow-0.9.0.tar.gz][6]
-* **Verification**: [sha512][3], [asc][7] ([verification instructions][12])
+* **Source Release**: [{{site.data.versions['current'].tarball_name}}][6]
+* **Verification**: [asc signature][13], [sha256 checksum][14], [sha512 checksum][15], ([verification instructions][12])
 * [Git tag {{site.data.versions['current'].git-tag}}][2]
-* [PGP keys for release signatures][11]
+* [GPG keys for release signatures][11]
 
 ### Java Packages
 
 [Java Artifacts on Maven Central][4]
 
 ## Binary Installers for C, C++, Python
-
-Binary packages may not be updated immediately after the source release is posted.
 
 ### C++ and Python Conda Packages (Unofficial)
 
@@ -53,20 +51,20 @@ Install them with:
 
 
 ```shell
-conda install arrow-cpp=0.9.* -c conda-forge
-conda install pyarrow=0.9.* -c conda-forge
+conda install arrow-cpp={{site.data.versions['current'].pinned_number}} -c conda-forge
+conda install pyarrow={{site.data.versions['current'].pinned_number}} -c conda-forge
 ```
 
-### Python Wheels on PyPI (Unofficial)
+### Python Wheels on PyPI
 
-We have provided binary wheels on PyPI for Linux, macOS, and Windows:
+We have provided official binary wheels on PyPI for Linux, macOS, and Windows:
 
 ```shell
-pip install pyarrow==0.9.*
+pip install pyarrow=={{site.data.versions['current'].pinned_number}}
 ```
 
-We recommend pinning `0.9.*` in `requirements.txt` to install the latest patch
-release.
+We recommend pinning `{{site.data.versions['current'].pinned_number}}`
+in `requirements.txt` to install the latest patch release.
 
 These include the Apache Arrow and Apache Parquet C++ binary libraries bundled
 with the wheel.
@@ -79,8 +77,7 @@ Apache Arrow GLib (C). Here are supported platforms:
 * Debian GNU/Linux stretch
 * Ubuntu 14.04 LTS
 * Ubuntu 16.04 LTS
-* Ubuntu 17.04
-* Ubuntu 17.10
+* Ubuntu 18.04 LTS
 * CentOS 6
 * CentOS 7
 
@@ -89,12 +86,11 @@ Debian GNU/Linux:
 ```shell
 sudo apt install -y -V apt-transport-https
 sudo apt install -y -V lsb-release
-cat <<APT_LINE | sudo tee /etc/apt/sources.list.d/red-data-tools.list
-deb https://packages.red-data-tools.org/debian/ $(lsb_release --codename --short) main
-deb-src https://packages.red-data-tools.org/debian/ $(lsb_release --codename --short) main
+sudo wget -O /usr/share/keyrings/red-data-tools-keyring.gpg https://packages.red-data-tools.org/$(lsb_release --id --short | tr 'A-Z' 'a-z')/red-data-tools-keyring.gpg
+sudo tee /etc/apt/sources.list.d/red-data-tools.list <<APT_LINE
+deb [signed-by=/usr/share/keyrings/red-data-tools-keyring.gpg] https://packages.red-data-tools.org/$(lsb_release --id --short | tr 'A-Z' 'a-z')/ $(lsb_release --codename --short) main
+deb-src [signed-by=/usr/share/keyrings/red-data-tools-keyring.gpg] https://packages.red-data-tools.org/$(lsb_release --id --short | tr 'A-Z' 'a-z')/ $(lsb_release --codename --short) main
 APT_LINE
-sudo apt update --allow-insecure-repositories
-sudo apt install -y -V --allow-unauthenticated red-data-tools-keyring
 sudo apt update
 sudo apt install -y -V libarrow-dev # For C++
 sudo apt install -y -V libarrow-glib-dev # For GLib (C)
@@ -105,12 +101,11 @@ Ubuntu:
 ```shell
 sudo apt install -y -V apt-transport-https
 sudo apt install -y -V lsb-release
-cat <<APT_LINE | sudo tee /etc/apt/sources.list.d/red-data-tools.list
-deb https://packages.red-data-tools.org/ubuntu/ $(lsb_release --codename --short) universe
-deb-src https://packages.red-data-tools.org/ubuntu/ $(lsb_release --codename --short) universe
+sudo wget -O /usr/share/keyrings/red-data-tools-keyring.gpg https://packages.red-data-tools.org/$(lsb_release --id --short | tr 'A-Z' 'a-z')/red-data-tools-keyring.gpg
+sudo tee /etc/apt/sources.list.d/red-data-tools.list <<APT_LINE
+deb [signed-by=/usr/share/keyrings/red-data-tools-keyring.gpg] https://packages.red-data-tools.org/$(lsb_release --id --short | tr 'A-Z' 'a-z')/ $(lsb_release --codename --short) universe
+deb-src [signed-by=/usr/share/keyrings/red-data-tools-keyring.gpg] https://packages.red-data-tools.org/$(lsb_release --id --short | tr 'A-Z' 'a-z')/ $(lsb_release --codename --short) universe
 APT_LINE
-sudo apt update --allow-insecure-repositories || sudo apt update
-sudo apt install -y -V --allow-unauthenticated red-data-tools-keyring
 sudo apt update
 sudo apt install -y -V libarrow-dev # For C++
 sudo apt install -y -V libarrow-glib-dev # For GLib (C)
@@ -119,13 +114,13 @@ sudo apt install -y -V libarrow-glib-dev # For GLib (C)
 CentOS:
 
 ```shell
-sudo yum install -y https://packages.red-data-tools.org/centos/red-data-tools-release-1.0.0-1.noarch.rpm
+sudo yum install -y https://packages.red-data-tools.org/centos/red-data-tools-release-latest.noarch.rpm
 sudo yum install -y --enablerepo=epel arrow-devel # For C++
 sudo yum install -y --enablerepo=epel arrow-glib-devel # For GLib (C)
 ```
 
 These repositories also provide Apache Parquet C++ and
-[Parquet GLib][8]. You can install them by the followings:
+Apache Parquet GLib. You can install them by the followings:
 
 Debian GNU/Linux and Ubuntu:
 
@@ -142,18 +137,19 @@ sudo yum install -y --enablerepo=epel parquet-glib-devel # For Parquet GLib (C)
 ```
 
 These repositories are managed at
-[red-data-tools/arrow-packages][9]. If you have any feedback, please
-send it to the project instead of Apache Arrow project.
+[red-data-tools/packages.red-data-tools.org][9]. If you have any
+feedback, please send it to the project instead of Apache Arrow
+project.
 
 [1]: {{site.data.versions['current'].mirrors}}
 [2]: {{site.data.versions['current'].github-tag-link}}
-[3]: {{site.data.versions['current'].sha512}}
 [4]: {{site.data.versions['current'].java-artifacts}}
 [5]: http://conda-forge.github.io
 [6]: {{site.data.versions['current'].mirrors-tar}}
-[7]: {{site.data.versions['current'].asc}}
-[8]: https://github.com/red-data-tools/parquet-glib
-[9]: https://github.com/red-data-tools/arrow-packages
+[9]: https://github.com/red-data-tools/packages.red-data-tools.org
 [10]: {{site.data.versions['current'].release-notes}}
 [11]: http://www.apache.org/dist/arrow/KEYS
 [12]: https://www.apache.org/dyn/closer.cgi#verify
+[13]: {{site.data.versions['current'].asc}}
+[14]: {{site.data.versions['current'].sha256}}
+[15]: {{site.data.versions['current'].sha512}}

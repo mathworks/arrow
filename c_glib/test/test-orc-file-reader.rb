@@ -16,6 +16,7 @@
 # under the License.
 
 class TestORCFileReader < Test::Unit::TestCase
+  include Helper::Buildable
   include Helper::Omittable
   include Helper::Fixture
 
@@ -43,194 +44,188 @@ map: list<item: struct<key: string, value: struct<int1: int32, string1: string>>
     SCHEMA
   end
 
-  def test_field_indexes
+  def test_field_indices
     require_gi(1, 42, 0)
-    assert_nil(@reader.field_indexes)
-    @reader.set_field_indexes([1, 3])
-    assert_equal([1, 3], @reader.field_indexes)
+    require_gi_bindings(3, 2, 6)
+    assert_nil(@reader.field_indices)
+    @reader.field_indices = [1, 3]
+    assert_equal([1, 3], @reader.field_indices)
+  end
+
+  def item_fields
+    [
+      Arrow::Field.new("int1", Arrow::Int32DataType.new),
+      Arrow::Field.new("string1", Arrow::StringDataType.new),
+    ]
+  end
+
+  def item_data_type
+    Arrow::StructDataType.new(item_fields)
+  end
+
+  def build_items_array(items_array)
+    build_list_array(item_data_type, items_array)
+  end
+
+  def items_data_type
+    Arrow::ListDataType.new(Arrow::Field.new("item", item_data_type))
+  end
+
+  def middle_fields
+    [
+      Arrow::Field.new("list", items_data_type),
+    ]
+  end
+
+  def build_middle_array(middles)
+    build_struct_array(middle_fields, middles)
+  end
+
+  def key_value_fields
+    [
+      Arrow::Field.new("key", Arrow::StringDataType.new),
+      Arrow::Field.new("value", item_data_type),
+    ]
+  end
+
+  def key_value_data_type
+    Arrow::StructDataType.new(key_value_fields)
+  end
+
+  def build_key_value_array(key_value_array)
+    build_list_array(key_value_data_type, key_value_array)
+  end
+
+  def middle_array
+    build_middle_array([
+                         {
+                           "list" => [
+                             {
+                               "int1" => 1,
+                               "string1" => "bye",
+                             },
+                             {
+                               "int1" => 2,
+                               "string1" => "sigh",
+                             },
+                           ],
+                         },
+                         {
+                           "list" => [
+                             {
+                               "int1" => 1,
+                               "string1" => "bye",
+                             },
+                             {
+                               "int1" => 2,
+                               "string1" => "sigh",
+                             },
+                           ],
+                         },
+                       ])
+  end
+
+  def list_array
+    build_items_array([
+                        [
+                          {
+                            "int1" => 3,
+                            "string1" => "good",
+                          },
+                          {
+                            "int1" => 4,
+                            "string1" => "bad",
+                          },
+                        ],
+                        [
+                          {
+                            "int1" => 100000000,
+                            "string1" => "cat",
+                          },
+                          {
+                            "int1" => -100000,
+                            "string1" => "in",
+                          },
+                          {
+                            "int1" => 1234,
+                            "string1" => "hat",
+                          },
+                        ]
+                      ])
+  end
+
+  def map_array
+    build_key_value_array([
+                            [
+                            ],
+                            [
+                              {
+                                "key" => "chani",
+                                "value" => {
+                                  "int1" => 5,
+                                  "string1" => "chani",
+                                },
+                              },
+                              {
+                                "key" => "mauddib",
+                                "value" => {
+                                  "int1" => 1,
+                                  "string1" => "mauddib",
+                                },
+                              },
+                            ],
+                          ])
+  end
+
+  def all_columns
+    {
+      "boolean1" => build_boolean_array([false, true]),
+      "byte1" => build_int8_array([1, 100]),
+      "short1" => build_int16_array([1024, 2048]),
+      "int1" => build_int32_array([65536, 65536]),
+      "long1" => build_int64_array([
+                                     9223372036854775807,
+                                     9223372036854775807,
+                                   ]),
+      "float1" => build_float_array([1.0, 2.0]),
+      "double1" => build_double_array([-15.0, -5.0]),
+      "bytes1" => build_binary_array(["\x00\x01\x02\x03\x04", ""]),
+      "string1" => build_string_array(["hi", "bye"]),
+      "middle" => middle_array,
+      "list" => list_array,
+      "map" => map_array,
+    }
   end
 
   sub_test_case("#read_stripes") do
     test("all") do
-      table = @reader.read_stripes
-      dump = table.n_columns.times.collect do |i|
-        column = table.get_column(i)
-        [
-          column.field.to_s,
-          column.data.chunks.collect(&:to_s),
-        ]
-      end
-      assert_equal([
-                     ["boolean1: bool", ["[false, true]"]],
-                     ["byte1: int8", ["[1, 100]"]],
-                     ["short1: int16", ["[1024, 2048]"]],
-                     ["int1: int32", ["[65536, 65536]"]],
-                     [
-                       "long1: int64",
-                       ["[9223372036854775807, 9223372036854775807]"],
-                     ],
-                     ["float1: float", ["[1, 2]"]],
-                     ["double1: double", ["[-15, -5]"]],
-                     ["bytes1: binary", ["[0001020304, ]"]],
-                     ["string1: string", ["[\"hi\", \"bye\"]"]],
-                     [
-                       "middle: " +
-                       "struct<list: " +
-                       "list<item: struct<int1: int32, string1: string>>>",
-                       [
-                         <<-STRUCT.chomp
-
--- is_valid: all not null
--- child 0 type: list<item: struct<int1: int32, string1: string>> values: 
-  -- is_valid: all not null
-  -- value_offsets: [0, 2, 4]
-  -- values: 
-    -- is_valid: all not null
-    -- child 0 type: int32 values: [1, 2, 1, 2]
-    -- child 1 type: string values: ["bye", "sigh", "bye", "sigh"]
-                          STRUCT
-                       ]
-                     ],
-                     [
-                       "list: list<item: struct<int1: int32, string1: string>>",
-                       [
-                         <<-LIST.chomp
-
--- is_valid: all not null
--- value_offsets: [0, 2, 5]
--- values: 
-  -- is_valid: all not null
-  -- child 0 type: int32 values: [3, 4, 100000000, -100000, 1234]
-  -- child 1 type: string values: ["good", "bad", "cat", "in", "hat"]
-                         LIST
-                       ]
-                     ],
-                     [
-                       "map: list<item: " +
-                       "struct<key: string, value: " +
-                       "struct<int1: int32, string1: string>>>",
-                       [
-                         <<-MAP.chomp
-
--- is_valid: all not null
--- value_offsets: [0, 0, 2]
--- values: 
-  -- is_valid: all not null
-  -- child 0 type: string values: ["chani", "mauddib"]
-  -- child 1 type: struct<int1: int32, string1: string> values: 
-    -- is_valid: all not null
-    -- child 0 type: int32 values: [5, 1]
-    -- child 1 type: string values: ["chani", "mauddib"]
-                         MAP
-                       ],
-                     ],
-                   ],
-                   dump)
+      assert_equal(build_table(all_columns),
+                   @reader.read_stripes)
     end
 
     test("select fields") do
-      @reader.set_field_indexes([1, 3])
-      table = @reader.read_stripes
-      dump = table.n_columns.times.collect do |i|
-        column = table.get_column(i)
-        [
-          column.field.to_s,
-          column.data.chunks.collect(&:to_s),
-        ]
-      end
-      assert_equal([
-                     ["boolean1: bool", ["[false, true]"]],
-                     ["short1: int16", ["[1024, 2048]"]],
-                   ],
-                   dump)
+      require_gi_bindings(3, 2, 6)
+      @reader.field_indices = [1, 3]
+      assert_equal(build_table("boolean1" => build_boolean_array([false, true]),
+                               "short1" => build_int16_array([1024, 2048])),
+                   @reader.read_stripes)
     end
   end
 
   sub_test_case("#read_stripe") do
     test("all") do
-      record_batch = @reader.read_stripe(0)
-      dump = record_batch.n_columns.times.collect do |i|
-        [
-          record_batch.schema.get_field(i).to_s,
-          record_batch.get_column(i).to_s,
-        ]
-      end
-      assert_equal([
-                     ["boolean1: bool", "[false, true]"],
-                     ["byte1: int8", "[1, 100]"],
-                     ["short1: int16", "[1024, 2048]"],
-                     ["int1: int32", "[65536, 65536]"],
-                     [
-                       "long1: int64",
-                       "[9223372036854775807, 9223372036854775807]",
-                     ],
-                     ["float1: float", "[1, 2]"],
-                     ["double1: double", "[-15, -5]"],
-                     ["bytes1: binary", "[0001020304, ]"],
-                     ["string1: string", "[\"hi\", \"bye\"]"],
-                     [
-                       "middle: " +
-                       "struct<list: " +
-                       "list<item: struct<int1: int32, string1: string>>>",
-                       <<-STRUCT.chomp
-
--- is_valid: all not null
--- child 0 type: list<item: struct<int1: int32, string1: string>> values: 
-  -- is_valid: all not null
-  -- value_offsets: [0, 2, 4]
-  -- values: 
-    -- is_valid: all not null
-    -- child 0 type: int32 values: [1, 2, 1, 2]
-    -- child 1 type: string values: ["bye", "sigh", "bye", "sigh"]
-                        STRUCT
-                     ],
-                     [
-                       "list: list<item: struct<int1: int32, string1: string>>",
-                       <<-LIST.chomp
-
--- is_valid: all not null
--- value_offsets: [0, 2, 5]
--- values: 
-  -- is_valid: all not null
-  -- child 0 type: int32 values: [3, 4, 100000000, -100000, 1234]
-  -- child 1 type: string values: ["good", "bad", "cat", "in", "hat"]
-                       LIST
-                     ],
-                     [
-                       "map: list<item: " +
-                       "struct<key: string, value: " +
-                       "struct<int1: int32, string1: string>>>",
-                       <<-MAP.chomp
-
--- is_valid: all not null
--- value_offsets: [0, 0, 2]
--- values: 
-  -- is_valid: all not null
-  -- child 0 type: string values: ["chani", "mauddib"]
-  -- child 1 type: struct<int1: int32, string1: string> values: 
-    -- is_valid: all not null
-    -- child 0 type: int32 values: [5, 1]
-    -- child 1 type: string values: ["chani", "mauddib"]
-                       MAP
-                     ],
-                   ],
-                   dump)
+      assert_equal(build_record_batch(all_columns),
+                   @reader.read_stripe(0))
     end
 
     test("select fields") do
-      @reader.set_field_indexes([1, 3])
-      record_batch = @reader.read_stripe(0)
-      dump = record_batch.n_columns.times.collect do |i|
-        [
-          record_batch.schema.get_field(i).to_s,
-          record_batch.get_column(i).to_s,
-        ]
-      end
-      assert_equal([
-                     ["boolean1: bool", "[false, true]"],
-                     ["short1: int16", "[1024, 2048]"],
-                   ],
-                   dump)
+      require_gi_bindings(3, 2, 6)
+      @reader.field_indices = [1, 3]
+      boolean1 = build_boolean_array([false, true])
+      short1 = build_int16_array([1024, 2048])
+      assert_equal(build_record_batch("boolean1" => boolean1,
+                                      "short1" => short1),
+                   @reader.read_stripe(0))
     end
   end
 

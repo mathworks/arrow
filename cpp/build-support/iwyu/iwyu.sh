@@ -27,8 +27,7 @@ trap "rm -f $IWYU_LOG" EXIT
 echo "Logging IWYU to $IWYU_LOG"
 
 IWYU_MAPPINGS_PATH="$ROOT/cpp/build-support/iwyu/mappings"
-IWYU_ARGS="\
-    --mapping_file=$IWYU_MAPPINGS_PATH/boost-all.imp \
+IWYU_ARGS="--mapping_file=$IWYU_MAPPINGS_PATH/boost-all.imp \
     --mapping_file=$IWYU_MAPPINGS_PATH/boost-all-private.imp \
     --mapping_file=$IWYU_MAPPINGS_PATH/boost-extra.imp \
     --mapping_file=$IWYU_MAPPINGS_PATH/gflags.imp \
@@ -39,9 +38,8 @@ IWYU_ARGS="\
 set -e
 
 if [ "$1" == "all" ]; then
-  python $ROOT/cpp/build-support/iwyu/iwyu_tool.py -p . -- \
-       $IWYU_ARGS | awk -f $ROOT/cpp/build-support/iwyu/iwyu-filter.awk | \
-       tee $IWYU_LOG
+    python $ROOT/cpp/build-support/iwyu/iwyu_tool.py -p ${IWYU_COMPILATION_DATABASE_PATH:-.} \
+        -- $IWYU_ARGS | awk -f $ROOT/cpp/build-support/iwyu/iwyu-filter.awk
 else
   # Build the list of updated files which are of IWYU interest.
   file_list_tmp=$(git diff --name-only \
@@ -58,7 +56,7 @@ else
     IWYU_FILE_LIST="$IWYU_FILE_LIST $ROOT/$p"
   done
 
-  python $ROOT/cpp/build-support/iwyu/iwyu_tool.py -p . $IWYU_FILE_LIST  -- \
+  python $ROOT/cpp/build-support/iwyu/iwyu_tool.py -p ${IWYU_COMPILATION_DATABASE_PATH:-.} $IWYU_FILE_LIST  -- \
        $IWYU_ARGS | awk -f $ROOT/cpp/build-support/iwyu/iwyu-filter.awk | \
        tee $IWYU_LOG
 fi

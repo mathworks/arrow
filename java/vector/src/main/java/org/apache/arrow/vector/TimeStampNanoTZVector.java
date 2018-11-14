@@ -1,14 +1,13 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- * <p>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -21,10 +20,11 @@ package org.apache.arrow.vector;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.complex.impl.TimeStampNanoTZReaderImpl;
 import org.apache.arrow.vector.complex.reader.FieldReader;
-import org.apache.arrow.vector.holders.TimeStampNanoTZHolder;
 import org.apache.arrow.vector.holders.NullableTimeStampNanoTZHolder;
+import org.apache.arrow.vector.holders.TimeStampNanoTZHolder;
 import org.apache.arrow.vector.types.TimeUnit;
 import org.apache.arrow.vector.types.Types.MinorType;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.util.TransferPair;
 
@@ -44,8 +44,7 @@ public class TimeStampNanoTZVector extends TimeStampVector {
    * @param allocator allocator for memory management.
    */
   public TimeStampNanoTZVector(String name, BufferAllocator allocator, String timeZone) {
-    this(name, FieldType.nullable(new org.apache.arrow.vector.types.pojo.ArrowType.Timestamp(TimeUnit.NANOSECOND, timeZone)),
-            allocator);
+    this(name, FieldType.nullable(new ArrowType.Timestamp(TimeUnit.NANOSECOND, timeZone)), allocator);
   }
 
   /**
@@ -57,7 +56,7 @@ public class TimeStampNanoTZVector extends TimeStampVector {
    */
   public TimeStampNanoTZVector(String name, FieldType fieldType, BufferAllocator allocator) {
     super(name, fieldType, allocator);
-    org.apache.arrow.vector.types.pojo.ArrowType.Timestamp arrowType = (org.apache.arrow.vector.types.pojo.ArrowType.Timestamp) fieldType.getType();
+    ArrowType.Timestamp arrowType = (ArrowType.Timestamp) fieldType.getType();
     timeZone = arrowType.getTimezone();
     reader = new TimeStampNanoTZReaderImpl(TimeStampNanoTZVector.this);
   }
@@ -165,7 +164,9 @@ public class TimeStampNanoTZVector extends TimeStampVector {
    * @param index   position of element
    * @param holder  nullable data holder for value of element
    */
-  public void setSafe(int index, NullableTimeStampNanoTZHolder holder) throws IllegalArgumentException {
+  public void setSafe(
+      int index,
+      NullableTimeStampNanoTZHolder holder) throws IllegalArgumentException {
     handleSafe(index);
     set(index, holder);
   }

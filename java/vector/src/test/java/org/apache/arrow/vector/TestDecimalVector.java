@@ -1,14 +1,13 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- * <p>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -61,7 +60,8 @@ public class TestDecimalVector {
 
   @Test
   public void testValuesWriteRead() {
-    try (DecimalVector decimalVector = TestUtils.newVector(DecimalVector.class, "decimal", new ArrowType.Decimal(10, scale), allocator);) {
+    try (DecimalVector decimalVector = TestUtils.newVector(DecimalVector.class, "decimal",
+      new ArrowType.Decimal(10, scale), allocator);) {
 
       try (DecimalVector oldConstructor = new DecimalVector("decimal", allocator, 10, scale);) {
         assertEquals(decimalVector.getField().getType(), oldConstructor.getField().getType());
@@ -86,7 +86,8 @@ public class TestDecimalVector {
 
   @Test
   public void testBigDecimalDifferentScaleAndPrecision() {
-    try (DecimalVector decimalVector = TestUtils.newVector(DecimalVector.class, "decimal", new ArrowType.Decimal(4, 2), allocator);) {
+    try (DecimalVector decimalVector = TestUtils.newVector(DecimalVector.class, "decimal",
+      new ArrowType.Decimal(4, 2), allocator);) {
       decimalVector.allocateNew();
 
       // test BigDecimal with different scale
@@ -115,7 +116,8 @@ public class TestDecimalVector {
 
   @Test
   public void testWriteBigEndian() {
-    try (DecimalVector decimalVector = TestUtils.newVector(DecimalVector.class, "decimal", new ArrowType.Decimal(38, 9), allocator);) {
+    try (DecimalVector decimalVector = TestUtils.newVector(DecimalVector.class, "decimal",
+      new ArrowType.Decimal(38, 9), allocator);) {
       decimalVector.allocateNew();
       BigDecimal decimal1 = new BigDecimal("123456789.000000000");
       BigDecimal decimal2 = new BigDecimal("11.123456789");
@@ -159,7 +161,8 @@ public class TestDecimalVector {
 
   @Test
   public void testBigDecimalReadWrite() {
-    try (DecimalVector decimalVector = TestUtils.newVector(DecimalVector.class, "decimal", new ArrowType.Decimal(38, 9), allocator);) {
+    try (DecimalVector decimalVector = TestUtils.newVector(DecimalVector.class, "decimal",
+      new ArrowType.Decimal(38, 9), allocator);) {
       decimalVector.allocateNew();
       BigDecimal decimal1 = new BigDecimal("123456789.000000000");
       BigDecimal decimal2 = new BigDecimal("11.123456789");
@@ -198,7 +201,8 @@ public class TestDecimalVector {
    */
   @Test
   public void decimalBE2LE() {
-    try (DecimalVector decimalVector = TestUtils.newVector(DecimalVector.class, "decimal", new ArrowType.Decimal(21, 2), allocator)) {
+    try (DecimalVector decimalVector = TestUtils.newVector(DecimalVector.class, "decimal",
+      new ArrowType.Decimal(21, 2), allocator)) {
       decimalVector.allocateNew();
 
       BigInteger[] testBigInts = new BigInteger[] {

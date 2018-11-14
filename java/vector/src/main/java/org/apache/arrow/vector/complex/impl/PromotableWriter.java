@@ -1,14 +1,13 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- * <p/>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p/>
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,7 +17,8 @@
 
 package org.apache.arrow.vector.complex.impl;
 
-import io.netty.buffer.ArrowBuf;
+import java.math.BigDecimal;
+
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.ZeroVector;
@@ -34,13 +34,13 @@ import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.util.TransferPair;
 
-import java.math.BigDecimal;
+import io.netty.buffer.ArrowBuf;
 
 /**
  * This FieldWriter implementation delegates all FieldWriter API calls to an inner FieldWriter. This inner field writer
- * can start as a specific type, and this class will promote the writer to a UnionWriter if a call is made that the specifically
- * typed writer cannot handle. A new UnionVector is created, wrapping the original vector, and replaces the original vector
- * in the parent vector, which can be either an AbstractStructVector or a ListVector.
+ * can start as a specific type, and this class will promote the writer to a UnionWriter if a call is made that the
+ * specifically typed writer cannot handle. A new UnionVector is created, wrapping the original vector, and replaces the
+ * original vector in the parent vector, which can be either an AbstractStructVector or a ListVector.
  */
 public class PromotableWriter extends AbstractPromotableFieldWriter {
 
@@ -48,7 +48,7 @@ public class PromotableWriter extends AbstractPromotableFieldWriter {
   private final ListVector listVector;
   private final NullableStructWriterFactory nullableStructWriterFactory;
   private int position;
-  private final static int MAX_DECIMAL_PRECISION = 38;
+  private static final int MAX_DECIMAL_PRECISION = 38;
 
   private enum State {
     UNTYPED, SINGLE, UNION
@@ -65,7 +65,10 @@ public class PromotableWriter extends AbstractPromotableFieldWriter {
     this(v, parentContainer, NullableStructWriterFactory.getNullableStructWriterFactoryInstance());
   }
 
-  public PromotableWriter(ValueVector v, AbstractStructVector parentContainer, NullableStructWriterFactory nullableStructWriterFactory) {
+  public PromotableWriter(
+      ValueVector v,
+      AbstractStructVector parentContainer,
+      NullableStructWriterFactory nullableStructWriterFactory) {
     this.parentContainer = parentContainer;
     this.listVector = null;
     this.nullableStructWriterFactory = nullableStructWriterFactory;
@@ -76,7 +79,10 @@ public class PromotableWriter extends AbstractPromotableFieldWriter {
     this(v, listVector, NullableStructWriterFactory.getNullableStructWriterFactoryInstance());
   }
 
-  public PromotableWriter(ValueVector v, ListVector listVector, NullableStructWriterFactory nullableStructWriterFactory) {
+  public PromotableWriter(
+      ValueVector v,
+      ListVector listVector,
+      NullableStructWriterFactory nullableStructWriterFactory) {
     this.listVector = listVector;
     this.parentContainer = null;
     this.nullableStructWriterFactory = nullableStructWriterFactory;

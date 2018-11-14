@@ -19,11 +19,13 @@
 #define ARROW_BUFFER_H
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #include "arrow/memory_pool.h"
 #include "arrow/status.h"
@@ -101,6 +103,14 @@ class ARROW_EXPORT Buffer {
   Status Copy(const int64_t start, const int64_t nbytes,
               std::shared_ptr<Buffer>* out) const;
 
+  /// Zero bytes in padding, i.e. bytes between size_ and capacity_.
+  void ZeroPadding() {
+#ifndef NDEBUG
+    CheckMutable();
+#endif
+    memset(mutable_data_ + size_, 0, static_cast<size_t>(capacity_ - size_));
+  }
+
   /// \brief Construct a new buffer that owns its memory from a std::string
   ///
   /// \param[in] data a std::string object
@@ -114,6 +124,39 @@ class ARROW_EXPORT Buffer {
   /// \brief Construct a new buffer that owns its memory from a std::string
   /// using the default memory pool
   static Status FromString(const std::string& data, std::shared_ptr<Buffer>* out);
+
+  /// \brief Construct an immutable buffer that takes ownership of the contents
+  /// of an std::string
+  /// \param[in] data an rvalue-reference of a string
+  /// \return a new Buffer instance
+  static std::shared_ptr<Buffer> FromString(std::string&& data);
+
+  /// \brief Create buffer referencing typed memory with some length without
+  /// copying
+  /// \param[in] data the typed memory as C array
+  /// \param[in] length the number of values in the array
+  /// \return a new shared_ptr<Buffer>
+  template <typename T, typename SizeType = int64_t>
+  static std::shared_ptr<Buffer> Wrap(const T* data, SizeType length) {
+    return std::make_shared<Buffer>(reinterpret_cast<const uint8_t*>(data),
+                                    static_cast<int64_t>(sizeof(T) * length));
+  }
+
+  /// \brief Create buffer referencing std::vector with some length without
+  /// copying
+  /// \param[in] data the vector to be referenced. If this vector is changed,
+  /// the buffer may become invalid
+  /// \return a new shared_ptr<Buffer>
+  template <typename T>
+  static std::shared_ptr<Buffer> Wrap(const std::vector<T>& data) {
+    return std::make_shared<Buffer>(reinterpret_cast<const uint8_t*>(data.data()),
+                                    static_cast<int64_t>(sizeof(T) * data.size()));
+  }
+
+  /// \brief Copy buffer contents into a new std::string
+  /// \return std::string
+  /// \note Can throw std::bad_alloc if buffer is large
+  std::string ToString() const;
 
   int64_t capacity() const { return capacity_; }
   const uint8_t* data() const { return data_; }
@@ -177,6 +220,16 @@ class ARROW_EXPORT MutableBuffer : public Buffer {
   MutableBuffer(const std::shared_ptr<Buffer>& parent, const int64_t offset,
                 const int64_t size);
 
+  /// \brief Create buffer referencing typed memory with some length
+  /// \param[in] data the typed memory as C array
+  /// \param[in] length the number of values in the array
+  /// \return a new shared_ptr<Buffer>
+  template <typename T, typename SizeType = int64_t>
+  static std::shared_ptr<Buffer> Wrap(T* data, SizeType length) {
+    return std::make_shared<MutableBuffer>(reinterpret_cast<uint8_t*>(data),
+                                           static_cast<int64_t>(sizeof(T) * length));
+  }
+
  protected:
   MutableBuffer() : Buffer(NULLPTR, 0) {}
 };
@@ -188,6 +241,7 @@ class ARROW_EXPORT ResizableBuffer : public MutableBuffer {
   /// Change buffer reported size to indicated size, allocating memory if
   /// necessary.  This will ensure that the capacity of the buffer is a multiple
   /// of 64 bytes as defined in Layout.md.
+  /// Consider using ZeroPadding afterwards, in case you return buffer to a reader.
   ///
   /// @param shrink_to_fit On deactivating this option, the capacity of the Buffer won't
   /// decrease.
@@ -195,7 +249,7 @@ class ARROW_EXPORT ResizableBuffer : public MutableBuffer {
 
   /// Ensure that buffer has enough memory allocated to fit the indicated
   /// capacity (and meets the 64 byte padding requirement in Layout.md).
-  /// It does not change buffer's reported size.
+  /// It does not change buffer's reported size and doesn't zero the padding.
   virtual Status Reserve(const int64_t new_capacity) = 0;
 
   template <class T>
@@ -212,18 +266,106 @@ class ARROW_EXPORT ResizableBuffer : public MutableBuffer {
   ResizableBuffer(uint8_t* data, int64_t size) : MutableBuffer(data, size) {}
 };
 
-/// A Buffer whose lifetime is tied to a particular MemoryPool
-class ARROW_EXPORT PoolBuffer : public ResizableBuffer {
- public:
-  explicit PoolBuffer(MemoryPool* pool = NULLPTR);
-  ~PoolBuffer() override;
+/// \brief Allocate a fixed size mutable buffer from a memory pool, zero its padding.
+///
+/// \param[in] pool a memory pool
+/// \param[in] size size of buffer to allocate
+/// \param[out] out the allocated buffer (contains padding)
+///
+/// \return Status message
+ARROW_EXPORT
+Status AllocateBuffer(MemoryPool* pool, const int64_t size, std::shared_ptr<Buffer>* out);
 
-  Status Resize(const int64_t new_size, bool shrink_to_fit = true) override;
-  Status Reserve(const int64_t new_capacity) override;
+/// \brief Allocate a fixed size mutable buffer from a memory pool, zero its padding.
+///
+/// \param[in] pool a memory pool
+/// \param[in] size size of buffer to allocate
+/// \param[out] out the allocated buffer (contains padding)
+///
+/// \return Status message
+ARROW_EXPORT
+Status AllocateBuffer(MemoryPool* pool, const int64_t size, std::unique_ptr<Buffer>* out);
 
- private:
-  MemoryPool* pool_;
-};
+/// \brief Allocate a fixed-size mutable buffer from the default memory pool
+///
+/// \param[in] size size of buffer to allocate
+/// \param[out] out the allocated buffer (contains padding)
+///
+/// \return Status message
+ARROW_EXPORT
+Status AllocateBuffer(const int64_t size, std::shared_ptr<Buffer>* out);
+
+/// \brief Allocate a fixed-size mutable buffer from the default memory pool
+///
+/// \param[in] size size of buffer to allocate
+/// \param[out] out the allocated buffer (contains padding)
+///
+/// \return Status message
+ARROW_EXPORT
+Status AllocateBuffer(const int64_t size, std::unique_ptr<Buffer>* out);
+
+/// \brief Allocate a resizeable buffer from a memory pool, zero its padding.
+///
+/// \param[in] pool a memory pool
+/// \param[in] size size of buffer to allocate
+/// \param[out] out the allocated buffer
+///
+/// \return Status message
+ARROW_EXPORT
+Status AllocateResizableBuffer(MemoryPool* pool, const int64_t size,
+                               std::shared_ptr<ResizableBuffer>* out);
+
+/// \brief Allocate a resizeable buffer from a memory pool, zero its padding.
+///
+/// \param[in] pool a memory pool
+/// \param[in] size size of buffer to allocate
+/// \param[out] out the allocated buffer
+///
+/// \return Status message
+ARROW_EXPORT
+Status AllocateResizableBuffer(MemoryPool* pool, const int64_t size,
+                               std::unique_ptr<ResizableBuffer>* out);
+
+/// \brief Allocate a resizeable buffer from the default memory pool
+///
+/// \param[in] size size of buffer to allocate
+/// \param[out] out the allocated buffer
+///
+/// \return Status message
+ARROW_EXPORT
+Status AllocateResizableBuffer(const int64_t size, std::shared_ptr<ResizableBuffer>* out);
+
+/// \brief Allocate a resizeable buffer from the default memory pool
+///
+/// \param[in] size size of buffer to allocate
+/// \param[out] out the allocated buffer
+///
+/// \return Status message
+ARROW_EXPORT
+Status AllocateResizableBuffer(const int64_t size, std::unique_ptr<ResizableBuffer>* out);
+
+/// \brief Allocate a zero-initialized bitmap buffer from a memory pool
+///
+/// \param[in] pool memory pool to allocate memory from
+/// \param[in] length size in bits of bitmap to allocate
+/// \param[out] out the resulting buffer
+///
+/// \return Status message
+ARROW_EXPORT
+Status AllocateEmptyBitmap(MemoryPool* pool, int64_t length,
+                           std::shared_ptr<Buffer>* out);
+
+/// \brief Allocate a zero-initialized bitmap buffer from the default memory pool
+///
+/// \param[in] length size in bits of bitmap to allocate
+/// \param[out] out the resulting buffer
+///
+/// \return Status message
+ARROW_EXPORT
+Status AllocateEmptyBitmap(int64_t length, std::shared_ptr<Buffer>* out);
+
+// ----------------------------------------------------------------------
+// Buffer builder classes
 
 /// \class BufferBuilder
 /// \brief A class for incrementally building a contiguous chunk of in-memory data
@@ -245,11 +387,13 @@ class ARROW_EXPORT BufferBuilder {
     if (elements == 0) {
       return Status::OK();
     }
-    if (buffer_ == NULLPTR) {
-      buffer_ = std::make_shared<PoolBuffer>(pool_);
-    }
     int64_t old_capacity = capacity_;
-    RETURN_NOT_OK(buffer_->Resize(elements, shrink_to_fit));
+
+    if (buffer_ == NULLPTR) {
+      ARROW_RETURN_NOT_OK(AllocateResizableBuffer(pool_, elements, &buffer_));
+    } else {
+      ARROW_RETURN_NOT_OK(buffer_->Resize(elements, shrink_to_fit));
+    }
     capacity_ = buffer_->capacity();
     data_ = buffer_->mutable_data();
     if (capacity_ > old_capacity) {
@@ -268,7 +412,7 @@ class ARROW_EXPORT BufferBuilder {
   Status Append(const void* data, int64_t length) {
     if (capacity_ < length + size_) {
       int64_t new_capacity = BitUtil::NextPower2(length + size_);
-      RETURN_NOT_OK(Resize(new_capacity));
+      ARROW_RETURN_NOT_OK(Resize(new_capacity));
     }
     UnsafeAppend(data, length);
     return Status::OK();
@@ -279,7 +423,7 @@ class ARROW_EXPORT BufferBuilder {
     constexpr auto nbytes = static_cast<int64_t>(NBYTES);
     if (capacity_ < nbytes + size_) {
       int64_t new_capacity = BitUtil::NextPower2(nbytes + size_);
-      RETURN_NOT_OK(Resize(new_capacity));
+      ARROW_RETURN_NOT_OK(Resize(new_capacity));
     }
 
     std::copy(data.cbegin(), data.cend(), data_ + size_);
@@ -291,7 +435,7 @@ class ARROW_EXPORT BufferBuilder {
   Status Advance(const int64_t length) {
     if (capacity_ < length + size_) {
       int64_t new_capacity = BitUtil::NextPower2(length + size_);
-      RETURN_NOT_OK(Resize(new_capacity));
+      ARROW_RETURN_NOT_OK(Resize(new_capacity));
     }
     memset(data_ + size_, 0, static_cast<size_t>(length));
     size_ += length;
@@ -305,7 +449,7 @@ class ARROW_EXPORT BufferBuilder {
   }
 
   Status Finish(std::shared_ptr<Buffer>* out, bool shrink_to_fit = true) {
-    RETURN_NOT_OK(Resize(size_, shrink_to_fit));
+    ARROW_RETURN_NOT_OK(Resize(size_, shrink_to_fit));
     *out = buffer_;
     Reset();
     return Status::OK();
@@ -321,7 +465,7 @@ class ARROW_EXPORT BufferBuilder {
   const uint8_t* data() const { return data_; }
 
  protected:
-  std::shared_ptr<PoolBuffer> buffer_;
+  std::shared_ptr<ResizableBuffer> buffer_;
   MemoryPool* pool_;
   uint8_t* data_;
   int64_t capacity_;
@@ -364,45 +508,6 @@ class ARROW_EXPORT TypedBufferBuilder : public BufferBuilder {
   int64_t length() const { return size_ / sizeof(T); }
   int64_t capacity() const { return capacity_ / sizeof(T); }
 };
-
-/// \brief Allocate a fixed-size mutable buffer from a memory pool
-///
-/// \param[in] pool a memory pool
-/// \param[in] size size of buffer to allocate
-/// \param[out] out the allocated buffer (contains padding)
-///
-/// \return Status message
-ARROW_EXPORT
-Status AllocateBuffer(MemoryPool* pool, const int64_t size, std::shared_ptr<Buffer>* out);
-
-/// \brief Allocate a fixed-size mutable buffer from the default memory pool
-///
-/// \param[in] size size of buffer to allocate
-/// \param[out] out the allocated buffer (contains padding)
-///
-/// \return Status message
-ARROW_EXPORT
-Status AllocateBuffer(const int64_t size, std::shared_ptr<Buffer>* out);
-
-/// \brief Allocate a resizeable buffer from a memory pool
-///
-/// \param[in] pool a memory pool
-/// \param[in] size size of buffer to allocate
-/// \param[out] out the allocated buffer
-///
-/// \return Status message
-ARROW_EXPORT
-Status AllocateResizableBuffer(MemoryPool* pool, const int64_t size,
-                               std::shared_ptr<ResizableBuffer>* out);
-
-/// \brief Allocate a resizeable buffer from the default memory pool
-///
-/// \param[in] size size of buffer to allocate
-/// \param[out] out the allocated buffer
-///
-/// \return Status message
-ARROW_EXPORT
-Status AllocateResizableBuffer(const int64_t size, std::shared_ptr<ResizableBuffer>* out);
 
 }  // namespace arrow
 

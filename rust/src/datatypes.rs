@@ -15,11 +15,30 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use super::error::ArrowError;
-use serde_json::Value;
-use std::fmt;
+//! Defines the data-types of Arrow arrays.
+//!
+//! For an overview of the terminology used within the arrow project and more general information
+//! regarding data-types and memory layouts see
+//! [here](https://arrow.apache.org/docs/memory_layout.html).
 
-/// Arrow data type
+use std::fmt;
+use std::mem::size_of;
+use std::slice::from_raw_parts;
+
+use error::{ArrowError, Result};
+use serde_json::Value;
+
+/// The possible relative types that are supported.
+///
+/// The variants of this enum include primitive fixed size types as well as parametric or nested
+/// types.
+/// Currently the Rust implementation supports the following  nested types:
+///  - `List<T>`
+///  - `Struct<T, U, V, ...>`
+///
+/// Nested types can themselves be nested within other arrays.
+/// For more information on these types please see
+/// [here](https://arrow.apache.org/docs/memory_layout.html).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataType {
     Boolean,
@@ -39,7 +58,9 @@ pub enum DataType {
     Struct(Vec<Field>),
 }
 
-/// Arrow struct/schema field
+/// Contains the meta-data for a single relative type.
+///
+/// The `Schema` object is an ordered collection of `Field` objects.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
     name: String,
@@ -47,8 +68,11 @@ pub struct Field {
     nullable: bool,
 }
 
-/// Primitive type (ints, floats, strings)
-pub trait ArrowPrimitiveType: Copy + PartialOrd + 'static {}
+/// Trait indicating a primitive fixed-width type (bool, ints and floats).
+///
+/// This trait is a marker trait to indicate a primitive type, i.e. a type that occupies a fixed
+/// size in memory as indicated in bit or byte width.
+pub trait ArrowPrimitiveType: Send + Sync + Copy + PartialOrd + 'static {}
 
 impl ArrowPrimitiveType for bool {}
 impl ArrowPrimitiveType for u8 {}
@@ -62,10 +86,35 @@ impl ArrowPrimitiveType for i64 {}
 impl ArrowPrimitiveType for f32 {}
 impl ArrowPrimitiveType for f64 {}
 
+/// Allows conversion from supported Arrow types to a byte slice.
+pub trait ToByteSlice {
+    /// Converts this instance into a byte slice
+    fn to_byte_slice(&self) -> &[u8];
+}
+
+impl<T> ToByteSlice for [T]
+where
+    T: ArrowPrimitiveType,
+{
+    fn to_byte_slice(&self) -> &[u8] {
+        let raw_ptr = self.as_ptr() as *const T as *const u8;
+        unsafe { from_raw_parts(raw_ptr, self.len() * size_of::<T>()) }
+    }
+}
+
+impl<T> ToByteSlice for T
+where
+    T: ArrowPrimitiveType,
+{
+    fn to_byte_slice(&self) -> &[u8] {
+        let raw_ptr = self as *const T as *const u8;
+        unsafe { from_raw_parts(raw_ptr, size_of::<T>()) }
+    }
+}
+
 impl DataType {
     /// Parse a data type from a JSON representation
-    fn from(json: &Value) -> Result<DataType, ArrowError> {
-        //println!("DataType::from({:?})", json);
+    fn from(json: &Value) -> Result<DataType> {
         match *json {
             Value::Object(ref map) => match map.get("name") {
                 Some(s) if s == "bool" => Ok(DataType::Boolean),
@@ -120,7 +169,7 @@ impl DataType {
                         let fields = fields_array
                             .iter()
                             .map(|f| Field::from(f))
-                            .collect::<Result<Vec<Field>, ArrowError>>();
+                            .collect::<Result<Vec<Field>>>();
                         Ok(DataType::Struct(fields?))
                     }
                     _ => Err(ArrowError::ParseError("empty type".to_string())),
@@ -162,29 +211,32 @@ impl DataType {
 }
 
 impl Field {
+    /// Creates a new field
     pub fn new(name: &str, data_type: DataType, nullable: bool) -> Self {
         Field {
             name: name.to_string(),
-            data_type: data_type,
-            nullable: nullable,
+            data_type,
+            nullable,
         }
     }
 
+    /// Returns an immutable reference to the `Field`'s name
     pub fn name(&self) -> &String {
         &self.name
     }
 
+    /// Returns an immutable reference to the `Field`'s  data-type
     pub fn data_type(&self) -> &DataType {
         &self.data_type
     }
 
+    /// Indicates whether this `Field` supports null values
     pub fn is_nullable(&self) -> bool {
         self.nullable
     }
 
-    /// Parse a field definition from a JSON representation
-    pub fn from(json: &Value) -> Result<Self, ArrowError> {
-        //println!("Field::from({:?}", json);
+    /// Parse a `Field` definition from a JSON representation
+    pub fn from(json: &Value) -> Result<Self> {
         match *json {
             Value::Object(ref map) => {
                 let name = match map.get("name") {
@@ -223,7 +275,7 @@ impl Field {
         }
     }
 
-    /// Generate a JSON representation of the field
+    /// Generate a JSON representation of the `Field`
     pub fn to_json(&self) -> Value {
         json!({
             "name": self.name,
@@ -232,6 +284,7 @@ impl Field {
         })
     }
 
+    /// Converts to a `String` representation of the the `Field`
     pub fn to_string(&self) -> String {
         format!("{}: {:?}", self.name, self.data_type)
     }
@@ -239,37 +292,56 @@ impl Field {
 
 impl fmt::Display for Field {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {:?}", self.name, self.data_type)
+        write!(f, "{}", self.to_string())
     }
 }
 
-/// Arrow Schema
+/// Describes the meta-data of an ordered sequence of relative types.
+///
+/// Note that this information is only part of the meta-data and not part of the physical memory
+/// layout.
 #[derive(Debug, Clone)]
 pub struct Schema {
-    columns: Vec<Field>,
+    fields: Vec<Field>,
 }
 
 impl Schema {
-    /// create an empty schema
+    /// Creates an empty `Schema`
     pub fn empty() -> Self {
-        Schema { columns: vec![] }
+        Self { fields: vec![] }
     }
 
-    pub fn new(columns: Vec<Field>) -> Self {
-        Schema { columns: columns }
+    /// Creates a new `Schema` from a sequence of `Field` values
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # extern crate arrow;
+    /// # use arrow::datatypes::{Field, DataType, Schema};
+    /// let field_a = Field::new("a", DataType::Int64, false);
+    /// let field_b = Field::new("b", DataType::Boolean, false);
+    ///
+    /// let schema = Schema::new(vec![field_a, field_b]);
+    /// ```
+    pub fn new(fields: Vec<Field>) -> Self {
+        Self { fields }
     }
 
-    pub fn columns(&self) -> &Vec<Field> {
-        &self.columns
+    /// Returns an immutable reference of the vector of `Field` instances
+    pub fn fields(&self) -> &Vec<Field> {
+        &self.fields
     }
 
-    pub fn column(&self, i: usize) -> &Field {
-        &self.columns[i]
+    /// Returns an immutable reference of a specific `Field` instance selected using an offset
+    /// within the internal `fields` vector
+    pub fn field(&self, i: usize) -> &Field {
+        &self.fields[i]
     }
 
-    /// look up a column by name and return a reference to the column along with it's index
+    /// Look up a column by name and return a immutable reference to the column along with
+    /// it's index
     pub fn column_with_name(&self, name: &str) -> Option<(usize, &Field)> {
-        self.columns
+        self.fields
             .iter()
             .enumerate()
             .find(|&(_, c)| c.name == name)
@@ -278,11 +350,14 @@ impl Schema {
 
 impl fmt::Display for Schema {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&self.columns
-            .iter()
-            .map(|c| c.to_string())
-            .collect::<Vec<String>>()
-            .join(", "))
+        f.write_str(
+            &self
+                .fields
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
+        )
     }
 }
 
@@ -402,12 +477,12 @@ mod tests {
         ]);
 
         // test schema accessors
-        assert_eq!(_person.columns().len(), 3);
+        assert_eq!(_person.fields().len(), 3);
 
         // test field accessors
-        assert_eq!(_person.columns()[0].name(), "first_name");
-        assert_eq!(_person.columns()[0].data_type(), &DataType::Utf8);
-        assert_eq!(_person.columns()[0].is_nullable(), false);
+        assert_eq!(_person.fields()[0].name(), "first_name");
+        assert_eq!(_person.fields()[0].data_type(), &DataType::Utf8);
+        assert_eq!(_person.fields()[0].is_nullable(), false);
     }
 
 }

@@ -23,12 +23,11 @@ ADD_ARROW_TEST(ipc-read-write-test)
 ADD_ARROW_TEST(ipc-json-test)
 
 if (NOT ARROW_BOOST_HEADER_ONLY)
-  ADD_ARROW_TEST(json-integration-test)
+  ADD_ARROW_TEST(json-integration-test
+    EXTRA_LINK_LIBS gflags_static)
 
-  if (ARROW_BUILD_TESTS)
-    target_link_libraries(json-integration-test
-      gflags)
-
+  # Test is being built
+  if (TARGET json-integration-test)
     if (UNIX)
       if (APPLE)
         set_target_properties(json-integration-test
@@ -102,7 +101,7 @@ set(UTIL_LINK_LIBS
   ${BOOST_FILESYSTEM_LIBRARY}
   ${BOOST_SYSTEM_LIBRARY})
 
-if(NOT MSVC)
+if(NOT WIN32)
   set(UTIL_LINK_LIBS
     ${UTIL_LINK_LIBS}
     pthread

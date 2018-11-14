@@ -15,10 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#ifndef _WIN32
+#include <fcntl.h>  // IWYU pragma: keep
+#include <unistd.h>
+#endif
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <functional>
+#include <iterator>
 #include <memory>
 #include <random>
 #include <string>
+#include <utility>
 #include <valarray>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -123,11 +135,14 @@ TEST_F(TestBufferedOutputStream, DestructorClosesFile) {
 
 TEST_F(TestBufferedOutputStream, ExplicitCloseClosesFile) {
   OpenBuffered();
+  ASSERT_FALSE(stream_->closed());
   ASSERT_FALSE(FileIsClosed(fd_));
   ASSERT_OK(stream_->Close());
+  ASSERT_TRUE(stream_->closed());
   ASSERT_TRUE(FileIsClosed(fd_));
   // Idempotency
   ASSERT_OK(stream_->Close());
+  ASSERT_TRUE(stream_->closed());
   ASSERT_TRUE(FileIsClosed(fd_));
 }
 
@@ -186,6 +201,20 @@ TEST_F(TestBufferedOutputStream, LargeWrites) {
   ASSERT_OK(stream_->Close());
 
   AssertFileContents(path_, data);
+}
+
+TEST_F(TestBufferedOutputStream, Flush) {
+  OpenBuffered();
+
+  const std::string datastr = "1234568790";
+  const char* data = datastr.data();
+
+  ASSERT_OK(stream_->Write(data, datastr.size()));
+  ASSERT_OK(stream_->Flush());
+
+  AssertFileContents(path_, datastr);
+
+  ASSERT_OK(stream_->Close());
 }
 
 TEST_F(TestBufferedOutputStream, Tell) {

@@ -26,6 +26,9 @@
 #include "arrow/util/bit-util.h"
 
 namespace arrow {
+
+using internal::CopyBitmap;
+
 namespace BitUtil {
 
 // A naive bitmap reader implementation, meant as a baseline against
@@ -86,7 +89,7 @@ static std::shared_ptr<Buffer> CreateRandomBuffer(int64_t nbytes) {
   std::shared_ptr<Buffer> buffer;
   ABORT_NOT_OK(AllocateBuffer(nbytes, &buffer));
   memset(buffer->mutable_data(), 0, nbytes);
-  test::random_bytes(nbytes, 0, buffer->mutable_data());
+  random_bytes(nbytes, 0, buffer->mutable_data());
   return buffer;
 }
 

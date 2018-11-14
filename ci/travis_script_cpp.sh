@@ -23,13 +23,14 @@ source $TRAVIS_BUILD_DIR/ci/travis_env_common.sh
 
 pushd $CPP_BUILD_DIR
 
-ctest -j2 --output-on-failure -L unittest
+PATH=$ARROW_BUILD_TYPE:$PATH ctest -j2 --output-on-failure -L unittest
 
 popd
 
 # Capture C++ coverage info (we wipe the build dir in travis_script_python.sh)
 if [ "$ARROW_TRAVIS_COVERAGE" == "1" ]; then
     pushd $TRAVIS_BUILD_DIR
-    lcov --quiet --directory . --capture --no-external --output-file $ARROW_CPP_COVERAGE_FILE
+    lcov --quiet --directory . --capture --no-external --output-file $ARROW_CPP_COVERAGE_FILE \
+        2>&1 | grep -v "WARNING: no data found for /usr/include"
     popd
 fi

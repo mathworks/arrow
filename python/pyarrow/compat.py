@@ -78,6 +78,7 @@ if PY2:
         from decimal import Decimal
 
     unicode_type = unicode
+    file_type = file
     lzip = zip
     zip = itertools.izip
     zip_longest = itertools.izip_longest
@@ -107,9 +108,13 @@ if PY2:
     def unichar(s):
         return unichr(s)
 else:
-    import pickle as builtin_pickle
+    try:
+        import pickle5 as builtin_pickle
+    except ImportError:
+        import pickle as builtin_pickle
 
     unicode_type = str
+    file_type = None
     def lzip(*x):
         return list(zip(*x))
     long = int
@@ -142,10 +147,7 @@ else:
 try:
     import cloudpickle as pickle
 except ImportError:
-    try:
-        import cPickle as pickle
-    except ImportError:
-        import pickle
+    pickle = builtin_pickle
 
 def encode_file_path(path):
     import os
@@ -159,6 +161,48 @@ def encode_file_path(path):
     # Windows file system requires utf-16le for file names; Arrow C++ libraries
     # will convert utf8 to utf16
     return encoded_path
+
+def _iterate_python_module_paths(package_name):
+    """
+    Return an iterator to full paths of a python package.
+
+    This is a best effort and might fail.
+    It uses the official way of loading modules from
+    https://docs.python.org/3/library/importlib.html#approximating-importlib-import-module
+    """
+    if PY2:
+        import imp
+        try:
+            _, pathname, _ = imp.find_module(package_name)
+        except ImportError:
+            return
+        else:
+            yield pathname
+    else:
+        try:
+            import importlib
+            absolute_name = importlib.util.resolve_name(package_name, None)
+        except (ImportError, AttributeError):
+            # Sometimes, importlib is not available (e.g. Python 2)
+            # or importlib.util is not available (e.g. Python 2.7)
+            spec = None
+        else:
+            import sys
+            for finder in sys.meta_path:
+                try:
+                    spec = finder.find_spec(absolute_name, None)
+                except AttributeError:
+                    # On Travis (Python 3.5) the above produced:
+                    # AttributeError: 'VendorImporter' object has no
+                    # attribute 'find_spec'
+                    spec = None
+                if spec is not None:
+                    break
+
+        if spec:
+            module = importlib.util.module_from_spec(spec)
+            for path in module.__path__:
+                yield path
 
 def import_tensorflow_extension():
     """
@@ -178,43 +222,17 @@ def import_tensorflow_extension():
     # This is a performance optimization, tensorflow will always be
     # loaded via the "import tensorflow" statement below if this
     # doesn't succeed.
-    #
-    # This uses the official way of loading modules from
-    # https://docs.python.org/3/library/importlib.html#approximating-importlib-import-module
 
-    try:
-        import importlib
-        absolute_name = importlib.util.resolve_name("tensorflow", None)
-    except (ImportError, AttributeError):
-        # Sometimes, importlib is not available (e.g. Python 2)
-        # or importlib.util is not available (e.g. Python 2.7)
-        spec = None
-    else:
-        import sys
-        for finder in sys.meta_path:
+    for path in _iterate_python_module_paths("tensorflow"):
+        ext = os.path.join(path, "libtensorflow_framework.so")
+        if os.path.exists(ext):
+            import ctypes
             try:
-                spec = finder.find_spec(absolute_name, None)
-            except AttributeError:
-                # On Travis (Python 3.5) the above produced:
-                # AttributeError: 'VendorImporter' object has no
-                # attribute 'find_spec'
-                spec = None
-            if spec is not None:
-                break
-
-    if spec:
-        module = importlib.util.module_from_spec(spec)
-        for path in module.__path__:
-            ext = os.path.join(path, "libtensorflow_framework.so")
-            if os.path.exists(ext):
-                import ctypes
-                try:
-                    ctypes.CDLL(ext)
-                except OSError:
-                    pass
-                tensorflow_loaded = True
-                break
-
+                ctypes.CDLL(ext)
+            except OSError:
+                pass
+            tensorflow_loaded = True
+            break
 
     # If the above failed, try to load tensorflow the normal way
     # (this is more expensive)
@@ -223,6 +241,27 @@ def import_tensorflow_extension():
         try:
             import tensorflow
         except ImportError:
+            pass
+
+def import_pytorch_extension():
+    """
+    Load the PyTorch extension if it exists.
+
+    This is used to load the PyTorch extension before
+    pyarrow.lib. If we don't do this there are symbol clashes
+    between PyTorch's use of threading and our global
+    thread pool, see also
+    https://issues.apache.org/jira/browse/ARROW-2920
+    """
+    import ctypes
+    import os
+
+    for path in _iterate_python_module_paths("torch"):
+        try:
+            ctypes.CDLL(os.path.join(path, "lib/libcaffe2.so"))
+        except OSError:
+            # lib/libcaffe2.so only exists in pytorch starting from 0.4.0,
+            # in older versions of pytorch there are not symbol clashes
             pass
 
 

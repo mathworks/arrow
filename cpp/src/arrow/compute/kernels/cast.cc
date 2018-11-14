@@ -23,7 +23,6 @@
 #include <limits>
 #include <memory>
 #include <sstream>
-#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -31,13 +30,13 @@
 #include "arrow/array.h"
 #include "arrow/buffer.h"
 #include "arrow/builder.h"
-#include "arrow/compare.h"
 #include "arrow/type.h"
 #include "arrow/type_traits.h"
 #include "arrow/util/bit-util.h"
 #include "arrow/util/checked_cast.h"
 #include "arrow/util/logging.h"
 #include "arrow/util/macros.h"
+#include "arrow/util/parsing.h"  // IWYU pragma: keep
 
 #include "arrow/compute/context.h"
 #include "arrow/compute/kernel.h"
@@ -70,6 +69,10 @@
 #endif  // ARROW_EXTRA_ERROR_CONTEXT
 
 namespace arrow {
+
+using internal::checked_cast;
+using internal::CopyBitmap;
+
 namespace compute {
 
 constexpr int64_t kMillisecondsInDay = 86400000;
@@ -192,6 +195,19 @@ struct is_integer_downcast<
         (sizeof(O_T) < sizeof(I_T))));
 };
 
+template <typename O, typename I, typename Enable = void>
+struct is_float_truncate {
+  static constexpr bool value = false;
+};
+
+template <typename O, typename I>
+struct is_float_truncate<
+    O, I,
+    typename std::enable_if<std::is_base_of<Integer, O>::value &&
+                            std::is_base_of<FloatingPoint, I>::value>::type> {
+  static constexpr bool value = true;
+};
+
 template <typename O, typename I>
 struct CastFunctor<O, I,
                    typename std::enable_if<std::is_same<BooleanType, O>::value &&
@@ -252,8 +268,53 @@ struct CastFunctor<O, I,
 };
 
 template <typename O, typename I>
+struct CastFunctor<O, I, typename std::enable_if<is_float_truncate<O, I>::value>::type> {
+  void operator()(FunctionContext* ctx, const CastOptions& options,
+                  const ArrayData& input, ArrayData* output) {
+    using in_type = typename I::c_type;
+    using out_type = typename O::c_type;
+
+    auto in_offset = input.offset;
+    const in_type* in_data = GetValues<in_type>(input, 1);
+    auto out_data = GetMutableValues<out_type>(output, 1);
+
+    if (options.allow_float_truncate) {
+      // unsafe cast
+      for (int64_t i = 0; i < input.length; ++i) {
+        *out_data++ = static_cast<out_type>(*in_data++);
+      }
+    } else {
+      // safe cast
+      if (input.null_count != 0) {
+        internal::BitmapReader is_valid_reader(input.buffers[0]->data(), in_offset,
+                                               input.length);
+        for (int64_t i = 0; i < input.length; ++i) {
+          auto out_value = static_cast<out_type>(*in_data);
+          if (ARROW_PREDICT_FALSE(static_cast<in_type>(out_value) != *in_data)) {
+            ctx->SetStatus(Status::Invalid("Floating point value truncated"));
+          }
+          *out_data++ = out_value;
+          in_data++;
+          is_valid_reader.Next();
+        }
+      } else {
+        for (int64_t i = 0; i < input.length; ++i) {
+          auto out_value = static_cast<out_type>(*in_data);
+          if (ARROW_PREDICT_FALSE(static_cast<in_type>(out_value) != *in_data)) {
+            ctx->SetStatus(Status::Invalid("Floating point value truncated"));
+          }
+          *out_data++ = out_value;
+          in_data++;
+        }
+      }
+    }
+  }
+};
+
+template <typename O, typename I>
 struct CastFunctor<O, I,
                    typename std::enable_if<is_numeric_cast<O, I>::value &&
+                                           !is_float_truncate<O, I>::value &&
                                            !is_integer_downcast<O, I>::value>::type> {
   void operator()(FunctionContext* ctx, const CastOptions& options,
                   const ArrayData& input, ArrayData* output) {
@@ -728,6 +789,79 @@ struct CastFunctor<T, DictionaryType,
 };
 
 // ----------------------------------------------------------------------
+// String to Number
+
+template <typename O>
+struct CastFunctor<O, StringType, enable_if_number<O>> {
+  void operator()(FunctionContext* ctx, const CastOptions& options,
+                  const ArrayData& input, ArrayData* output) {
+    using out_type = typename O::c_type;
+
+    StringArray input_array(input.Copy());
+    auto out_data = GetMutableValues<out_type>(output, 1);
+    internal::StringConverter<O> converter;
+
+    for (int64_t i = 0; i < input.length; ++i, ++out_data) {
+      if (input_array.IsNull(i)) {
+        continue;
+      }
+
+      int32_t length = -1;
+      auto str = input_array.GetValue(i, &length);
+      if (!converter(reinterpret_cast<const char*>(str), static_cast<size_t>(length),
+                     out_data)) {
+        std::stringstream ss;
+        ss << "Failed to cast String '" << str << "' into " << output->type->ToString();
+        ctx->SetStatus(Status(StatusCode::Invalid, ss.str()));
+        return;
+      }
+    }
+  }
+};
+
+// ----------------------------------------------------------------------
+// String to Boolean
+
+template <typename O>
+struct CastFunctor<O, StringType,
+                   typename std::enable_if<std::is_same<BooleanType, O>::value>::type> {
+  void operator()(FunctionContext* ctx, const CastOptions& options,
+                  const ArrayData& input, ArrayData* output) {
+    StringArray input_array(input.Copy());
+    internal::FirstTimeBitmapWriter writer(output->buffers[1]->mutable_data(),
+                                           output->offset, input.length);
+    internal::StringConverter<O> converter;
+
+    for (int64_t i = 0; i < input.length; ++i) {
+      if (input_array.IsNull(i)) {
+        writer.Next();
+        continue;
+      }
+
+      int32_t length = -1;
+      auto str = input_array.GetValue(i, &length);
+      bool value;
+      if (!converter(reinterpret_cast<const char*>(str), static_cast<size_t>(length),
+                     &value)) {
+        std::stringstream ss;
+        ss << "Failed to cast String '" << input_array.GetString(i) << "' into "
+           << output->type->ToString();
+        ctx->SetStatus(Status(StatusCode::Invalid, ss.str()));
+        return;
+      }
+
+      if (value) {
+        writer.Set();
+      } else {
+        writer.Clear();
+      }
+      writer.Next();
+    }
+    writer.Finish();
+  }
+};
+
+// ----------------------------------------------------------------------
 
 typedef std::function<void(FunctionContext*, const CastOptions& options, const ArrayData&,
                            ArrayData*)>
@@ -905,6 +1039,20 @@ class CastKernel : public UnaryKernel {
   FN(TimestampType, Date64Type);     \
   FN(TimestampType, Int64Type);
 
+#define STRING_CASES(FN, IN_TYPE) \
+  FN(StringType, StringType);     \
+  FN(StringType, BooleanType);    \
+  FN(StringType, UInt8Type);      \
+  FN(StringType, Int8Type);       \
+  FN(StringType, UInt16Type);     \
+  FN(StringType, Int16Type);      \
+  FN(StringType, UInt32Type);     \
+  FN(StringType, Int32Type);      \
+  FN(StringType, UInt64Type);     \
+  FN(StringType, Int64Type);      \
+  FN(StringType, FloatType);      \
+  FN(StringType, DoubleType);
+
 #define DICTIONARY_CASES(FN, IN_TYPE) \
   FN(IN_TYPE, NullType);              \
   FN(IN_TYPE, Time32Type);            \
@@ -962,6 +1110,7 @@ GET_CAST_FUNCTION(DATE64_CASES, Date64Type);
 GET_CAST_FUNCTION(TIME32_CASES, Time32Type);
 GET_CAST_FUNCTION(TIME64_CASES, Time64Type);
 GET_CAST_FUNCTION(TIMESTAMP_CASES, TimestampType);
+GET_CAST_FUNCTION(STRING_CASES, StringType);
 GET_CAST_FUNCTION(DICTIONARY_CASES, DictionaryType);
 
 #define CAST_FUNCTION_CASE(InType)                      \
@@ -1009,6 +1158,7 @@ Status GetCastFunction(const DataType& in_type, const std::shared_ptr<DataType>&
     CAST_FUNCTION_CASE(Time32Type);
     CAST_FUNCTION_CASE(Time64Type);
     CAST_FUNCTION_CASE(TimestampType);
+    CAST_FUNCTION_CASE(StringType);
     CAST_FUNCTION_CASE(DictionaryType);
     case Type::LIST:
       RETURN_NOT_OK(GetListCastFunc(in_type, out_type, options, kernel));

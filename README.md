@@ -46,12 +46,14 @@ Major components of the project include:
  - [The Arrow Columnar In-Memory Format](https://github.com/apache/arrow/tree/master/format)
  - [C++ libraries](https://github.com/apache/arrow/tree/master/cpp)
  - [C bindings using GLib](https://github.com/apache/arrow/tree/master/c_glib)
+ - [C# .NET libraries](https://github.com/apache/arrow/tree/master/csharp)
  - [Go libraries](https://github.com/apache/arrow/tree/master/go)
  - [Java libraries](https://github.com/apache/arrow/tree/master/java)
  - [JavaScript libraries](https://github.com/apache/arrow/tree/master/js)
  - [Plasma Object Store](https://github.com/apache/arrow/tree/master/cpp/src/plasma): a
    shared-memory blob store, part of the C++ codebase
  - [Python libraries](https://github.com/apache/arrow/tree/master/python)
+ - [R libraries](https://github.com/apache/arrow/tree/master/r)
  - [Ruby libraries](https://github.com/apache/arrow/tree/master/ruby)
  - [Rust libraries](https://github.com/apache/arrow/tree/master/rust)
 

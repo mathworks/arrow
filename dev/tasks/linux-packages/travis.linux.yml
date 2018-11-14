@@ -20,35 +20,15 @@ dist: trusty
 sudo: required
 language: ruby
 
+# don't build twice
+if: tag IS blank
+
 env:
   global:
     - PLAT=x86_64
     - TRAVIS_TAG={{ task.tag }}
     - BUILD_REF={{ arrow.head }}
     - ARROW_VERSION={{ arrow.version }}
-
-before_install:
-  - sudo apt update -y -qq
-  - |
-    sudo apt install -y -qq \
-        autoconf-archive \
-        build-essential \
-        cmake \
-        debhelper \
-        devscripts \
-        git \
-        gtk-doc-tools \
-        libboost-filesystem-dev \
-        libboost-regex-dev \
-        libboost-system-dev \
-        libgirepository1.0-dev \
-        libglib2.0-doc \
-        libjemalloc-dev \
-        lsb-release \
-        nvidia-cuda-toolkit \
-        pkg-config \
-        python3-dev \
-        python3-numpy
 
 before_script:
   - git clone -b {{ arrow.branch }} {{ arrow.remote }} arrow
@@ -64,7 +44,10 @@ deploy:
   provider: releases
   api_key: $CROSSBOW_GITHUB_TOKEN
   file_glob: true
-  file: "**/*.{{ package_format }}"
+  file:
+  {% for extension in upload_extensions -%}
+    - "**/*{{ extension }}"
+  {% endfor -%}
   skip_cleanup: true
   on:
     tags: true

@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-class TestTable < Test::Unit::TestCase
+class TestRecordBatch < Test::Unit::TestCase
   include Helper::Buildable
 
   sub_test_case(".new") do
@@ -131,8 +131,20 @@ class TestTable < Test::Unit::TestCase
 
     def test_to_s
       assert_equal(<<-PRETTY_PRINT, @record_batch.to_s)
-visible: [true, false, true, false, true]
-valid: [false, true, false, true, false]
+visible:   [
+    true,
+    false,
+    true,
+    false,
+    true
+  ]
+valid:   [
+    false,
+    true,
+    false,
+    true,
+    false
+  ]
       PRETTY_PRINT
     end
 

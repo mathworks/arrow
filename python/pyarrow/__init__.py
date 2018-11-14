@@ -20,39 +20,35 @@
 import os as _os
 import sys as _sys
 
-from pkg_resources import get_distribution, DistributionNotFound
 try:
-    __version__ = get_distribution(__name__).version
-except DistributionNotFound:
-   # package is not installed
+    from ._generated_version import version as __version__
+except ImportError:
+    # Package is not installed, parse git tag at runtime
     try:
-        # This code is duplicated from setup.py to avoid a dependency on each
-        # other.
-        def parse_version(root):
-            from setuptools_scm import version_from_scm
-            import setuptools_scm.git
-            describe = (setuptools_scm.git.DEFAULT_DESCRIBE +
-                        " --match 'apache-arrow-[0-9]*'")
-            # Strip catchall from the commandline
-            describe = describe.replace("--match *.*", "")
-            version = setuptools_scm.git.parse(root, describe)
-            if not version:
-                return version_from_scm(root)
-            else:
-                return version
-
         import setuptools_scm
-        __version__ = setuptools_scm.get_version('../', parse=parse_version)
-    except (ImportError, LookupError):
+        # Code duplicated from setup.py to avoid a dependency on each other
+        def parse_git(root, **kwargs):
+            """
+            Parse function for setuptools_scm that ignores tags for non-C++
+            subprojects, e.g. apache-arrow-js-XXX tags.
+            """
+            from setuptools_scm.git import parse
+            kwargs['describe_command'] = \
+                "git describe --dirty --tags --long --match 'apache-arrow-[0-9].*'"
+            return parse(root, **kwargs)
+        __version__ = setuptools_scm.get_version('../',
+                                                 parse=parse_git)
+    except ImportError:
         __version__ = None
 
 
 import pyarrow.compat as compat
 
-
 # Workaround for https://issues.apache.org/jira/browse/ARROW-2657
+# and https://issues.apache.org/jira/browse/ARROW-2920
 if _sys.platform in ('linux', 'linux2'):
     compat.import_tensorflow_extension()
+    compat.import_pytorch_extension()
 
 
 from pyarrow.lib import cpu_count, set_cpu_count
@@ -85,7 +81,7 @@ from pyarrow.lib import (null, bool_,
                          Date32Array, Date64Array,
                          TimestampArray, Time32Array, Time64Array,
                          Decimal128Array, StructArray,
-                         ArrayValue, Scalar, NA,
+                         ArrayValue, Scalar, NA, _NULL as NULL,
                          BooleanValue,
                          Int8Value, Int16Value, Int32Value, Int64Value,
                          UInt8Value, UInt16Value, UInt32Value, UInt64Value,
@@ -100,20 +96,24 @@ from pyarrow.lib import (null, bool_,
 from pyarrow.lib import (Buffer, ResizableBuffer, foreign_buffer, py_buffer,
                          compress, decompress, allocate_buffer)
 
-from pyarrow.lib import (MemoryPool, ProxyMemoryPool, total_allocated_bytes,
-                         set_memory_pool, default_memory_pool,
-                         log_memory_allocations)
+from pyarrow.lib import (MemoryPool, LoggingMemoryPool, ProxyMemoryPool,
+                         total_allocated_bytes, set_memory_pool,
+                         default_memory_pool, logging_memory_pool,
+                         proxy_memory_pool, log_memory_allocations)
 
+# I/O
 from pyarrow.lib import (HdfsFile, NativeFile, PythonFile,
+                         CompressedInputStream, CompressedOutputStream,
                          FixedSizeBufferWriter,
                          BufferReader, BufferOutputStream,
                          OSFile, MemoryMappedFile, memory_map,
                          create_memory_map, have_libhdfs, have_libhdfs3,
-                         MockOutputStream)
+                         MockOutputStream, input_stream, output_stream)
 
 from pyarrow.lib import (ChunkedArray, Column, RecordBatch, Table,
                          concat_tables)
 
+# Exceptions
 from pyarrow.lib import (ArrowException,
                          ArrowKeyError,
                          ArrowInvalid,
@@ -167,15 +167,13 @@ def _plasma_store_entry_point():
     """
     import pyarrow
     plasma_store_executable = _os.path.join(pyarrow.__path__[0],
-                                            "plasma_store")
+                                            "plasma_store_server")
     _os.execv(plasma_store_executable, _sys.argv)
 
 # ----------------------------------------------------------------------
 # Deprecations
 
 from pyarrow.util import _deprecate_api  # noqa
-
-frombuffer = _deprecate_api('frombuffer', 'py_buffer', py_buffer, '0.9.0')
 
 # ----------------------------------------------------------------------
 # Returning absolute path to the pyarrow include directory (if bundled, e.g. in
@@ -206,12 +204,31 @@ def get_library_dirs():
 
     library_dirs = [package_cwd]
 
+    # Search library paths via pkg-config. This is necessary if the user
+    # installed libarrow and the other shared libraries manually and they
+    # are not shipped inside the pyarrow package (see also ARROW-2976).
+    from subprocess import call, PIPE, Popen
+    pkg_config_executable = _os.environ.get('PKG_CONFIG', None) or 'pkg-config'
+    for package in ["arrow", "plasma", "arrow_python"]:
+        cmd = '{0} --exists {1}'.format(pkg_config_executable, package).split()
+        try:
+            if call(cmd) == 0:
+                cmd = [pkg_config_executable, "--libs-only-L", package]
+                proc = Popen(cmd, stdout=PIPE, stderr=PIPE)
+                out, err = proc.communicate()
+                library_dir = out.rstrip().decode('utf-8')[2:] # strip "-L"
+                if library_dir not in library_dirs:
+                    library_dirs.append(library_dir)
+        except FileNotFoundError:
+            pass
+
     if _sys.platform == 'win32':
         # TODO(wesm): Is this necessary, or does setuptools within a conda
         # installation add Library\lib to the linker path for MSVC?
-        site_packages, _ = _os.path.split(package_cwd)
-        python_base_install, _ = _os.path.split(site_packages)
-        library_dirs.append(_os.path.join(python_base_install,
-                                          'Library', 'lib'))
+        python_base_install = _os.path.dirname(_sys.executable)
+        library_lib = _os.path.join(python_base_install, 'Library', 'lib')
+
+        if _os.path.exists(_os.path.join(library_lib, 'arrow.lib')):
+            library_dirs.append(library_lib)
 
     return library_dirs

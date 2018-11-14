@@ -17,18 +17,14 @@
 
 @echo on
 
-if "%JOB%" == "Rust_Stable" (
-    cd rust
-    cargo build --target %TARGET% || exit /B
-    cargo build --target %TARGET% --release || exit /B
-    cargo test --target %TARGET% || exit /B
-    cargo test --target %TARGET% --release || exit /B
+if "%JOB%" == "Rust" (
+    call ci\rust-build-main.bat
 ) else (
     git config core.symlinks true
     git reset --hard
     if "%JOB%"=="Cmake_Script_Tests" (
-        call ci\test-cmake-build-script.bat
+        call ci\appveyor-cpp-test-cmake-script.bat
     ) else (
-        call ci\cpp-python-msvc-build.bat
+        call ci\appveyor-cpp-build.bat
     )
 )

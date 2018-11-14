@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
-#include <initializer_list>
 #include <limits>
 #include <memory>
 #include <valarray>
@@ -31,6 +30,7 @@
 
 #include "arrow/buffer.h"
 #include "arrow/memory_pool.h"
+#include "arrow/test-common.h"
 #include "arrow/test-util.h"
 #include "arrow/util/bit-stream-utils.h"
 #include "arrow/util/bit-util.h"
@@ -38,11 +38,12 @@
 
 namespace arrow {
 
-static void EnsureCpuInfoInitialized() {
-  if (!CpuInfo::initialized()) {
-    CpuInfo::Init();
-  }
-}
+using internal::BitmapAnd;
+using internal::BitmapOr;
+using internal::BitmapXor;
+using internal::CopyBitmap;
+using internal::CountSetBits;
+using internal::InvertBitmap;
 
 template <class BitmapWriter>
 void WriteVectorToWriter(BitmapWriter& writer, const std::vector<int> values) {
@@ -61,7 +62,7 @@ void BitmapFromVector(const std::vector<int>& values, int64_t bit_offset,
                       std::shared_ptr<Buffer>* out_buffer, int64_t* out_length) {
   const int64_t length = values.size();
   *out_length = length;
-  ASSERT_OK(GetEmptyBitmap(default_memory_pool(), length + bit_offset, out_buffer));
+  ASSERT_OK(AllocateEmptyBitmap(length + bit_offset, out_buffer));
   auto writer = internal::BitmapWriter((*out_buffer)->mutable_data(), bit_offset, length);
   WriteVectorToWriter(writer, values);
 }
@@ -308,7 +309,7 @@ TYPED_TEST_CASE(TestGenerateBits, GenerateBitsTypes);
 TYPED_TEST(TestGenerateBits, NormalOperation) {
   const int kSourceSize = 256;
   uint8_t source[kSourceSize];
-  test::random_bytes(kSourceSize, 0, source);
+  random_bytes(kSourceSize, 0, source);
 
   const int64_t start_offsets[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 21, 31, 32};
   const int64_t lengths[] = {0,  1,  2,  3,  4,   5,   6,   7,   8,   9,   12,  16,
@@ -356,49 +357,117 @@ TYPED_TEST(TestGenerateBits, NormalOperation) {
   }
 }
 
-TEST(BitmapAnd, Aligned) {
-  std::shared_ptr<Buffer> left, right, out;
-  int64_t length;
+struct BitmapOperation {
+  virtual Status Call(MemoryPool* pool, const uint8_t* left, int64_t left_offset,
+                      const uint8_t* right, int64_t right_offset, int64_t length,
+                      int64_t out_offset, std::shared_ptr<Buffer>* out_buffer) const = 0;
 
-  for (int64_t left_offset : {0, 1, 3, 5, 7, 8, 13, 21, 38, 75, 120}) {
-    BitmapFromVector({0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1}, left_offset, &left,
-                     &length);
-    for (int64_t right_offset : {left_offset, left_offset + 8, left_offset + 40}) {
-      BitmapFromVector({0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0}, right_offset, &right,
-                       &length);
-      for (int64_t out_offset : {left_offset, left_offset + 16, left_offset + 24}) {
-        ASSERT_OK(BitmapAnd(default_memory_pool(), left->mutable_data(), left_offset,
+  virtual ~BitmapOperation() = default;
+};
+
+struct BitmapAndOp : public BitmapOperation {
+  Status Call(MemoryPool* pool, const uint8_t* left, int64_t left_offset,
+              const uint8_t* right, int64_t right_offset, int64_t length,
+              int64_t out_offset, std::shared_ptr<Buffer>* out_buffer) const override {
+    return BitmapAnd(pool, left, left_offset, right, right_offset, length, out_offset,
+                     out_buffer);
+  }
+};
+
+struct BitmapOrOp : public BitmapOperation {
+  Status Call(MemoryPool* pool, const uint8_t* left, int64_t left_offset,
+              const uint8_t* right, int64_t right_offset, int64_t length,
+              int64_t out_offset, std::shared_ptr<Buffer>* out_buffer) const override {
+    return BitmapOr(pool, left, left_offset, right, right_offset, length, out_offset,
+                    out_buffer);
+  }
+};
+
+struct BitmapXorOp : public BitmapOperation {
+  Status Call(MemoryPool* pool, const uint8_t* left, int64_t left_offset,
+              const uint8_t* right, int64_t right_offset, int64_t length,
+              int64_t out_offset, std::shared_ptr<Buffer>* out_buffer) const override {
+    return BitmapXor(pool, left, left_offset, right, right_offset, length, out_offset,
+                     out_buffer);
+  }
+};
+
+class BitmapOp : public TestBase {
+ public:
+  void TestAligned(const BitmapOperation& op, const std::vector<int>& left_bits,
+                   const std::vector<int>& right_bits,
+                   const std::vector<int>& result_bits) {
+    std::shared_ptr<Buffer> left, right, out;
+    int64_t length;
+
+    for (int64_t left_offset : {0, 1, 3, 5, 7, 8, 13, 21, 38, 75, 120}) {
+      BitmapFromVector(left_bits, left_offset, &left, &length);
+      for (int64_t right_offset : {left_offset, left_offset + 8, left_offset + 40}) {
+        BitmapFromVector(right_bits, right_offset, &right, &length);
+        for (int64_t out_offset : {left_offset, left_offset + 16, left_offset + 24}) {
+          ASSERT_OK(op.Call(default_memory_pool(), left->mutable_data(), left_offset,
                             right->mutable_data(), right_offset, length, out_offset,
                             &out));
-        auto reader = internal::BitmapReader(out->mutable_data(), out_offset, length);
-        ASSERT_READER_VALUES(reader, {0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0});
+          auto reader = internal::BitmapReader(out->mutable_data(), out_offset, length);
+          ASSERT_READER_VALUES(reader, result_bits);
+        }
       }
     }
   }
+
+  void TestUnaligned(const BitmapOperation& op, const std::vector<int>& left_bits,
+                     const std::vector<int>& right_bits,
+                     const std::vector<int>& result_bits) {
+    std::shared_ptr<Buffer> left, right, out;
+    int64_t length;
+    auto offset_values = {0, 1, 3, 5, 7, 8, 13, 21, 38, 75, 120};
+
+    for (int64_t left_offset : offset_values) {
+      BitmapFromVector(left_bits, left_offset, &left, &length);
+
+      for (int64_t right_offset : offset_values) {
+        BitmapFromVector(right_bits, right_offset, &right, &length);
+
+        for (int64_t out_offset : offset_values) {
+          ASSERT_OK(op.Call(default_memory_pool(), left->mutable_data(), left_offset,
+                            right->mutable_data(), right_offset, length, out_offset,
+                            &out));
+          auto reader = internal::BitmapReader(out->mutable_data(), out_offset, length);
+          ASSERT_READER_VALUES(reader, result_bits);
+        }
+      }
+    }
+  }
+};
+
+TEST_F(BitmapOp, And) {
+  BitmapAndOp op;
+  std::vector<int> left = {0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1};
+  std::vector<int> right = {0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0};
+  std::vector<int> result = {0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0};
+
+  TestAligned(op, left, right, result);
+  TestUnaligned(op, left, right, result);
 }
 
-TEST(BitmapAnd, Unaligned) {
-  std::shared_ptr<Buffer> left, right, out;
-  int64_t length;
-  auto offset_values = {0, 1, 3, 5, 7, 8, 13, 21, 38, 75, 120};
+TEST_F(BitmapOp, Or) {
+  BitmapOrOp op;
+  std::vector<int> left = {0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0};
+  std::vector<int> right = {0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0};
+  std::vector<int> result = {0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0};
 
-  for (int64_t left_offset : offset_values) {
-    BitmapFromVector({0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1}, left_offset, &left,
-                     &length);
+  TestAligned(op, left, right, result);
+  TestUnaligned(op, left, right, result);
+}
 
-    for (int64_t right_offset : offset_values) {
-      BitmapFromVector({0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0}, right_offset, &right,
-                       &length);
+TEST_F(BitmapOp, XorAligned) {
+  BitmapXorOp op;
+  std::vector<int> left = {0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1};
+  std::vector<int> right = {0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0};
+  std::vector<int> result = {0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1};
 
-      for (int64_t out_offset : offset_values) {
-        ASSERT_OK(BitmapAnd(default_memory_pool(), left->mutable_data(), left_offset,
-                            right->mutable_data(), right_offset, length, out_offset,
-                            &out));
-        auto reader = internal::BitmapReader(out->mutable_data(), out_offset, length);
-        ASSERT_READER_VALUES(reader, {0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0});
-      }
-    }
-  }
+  TestAligned(op, left, right, result);
+  TestUnaligned(op, left, right, result);
 }
 
 static inline int64_t SlowCountBits(const uint8_t* data, int64_t bit_offset,
@@ -416,7 +485,7 @@ TEST(BitUtilTests, TestCountSetBits) {
   const int kBufferSize = 1000;
   uint8_t buffer[kBufferSize] = {0};
 
-  test::random_bytes(kBufferSize, 0, buffer);
+  random_bytes(kBufferSize, 0, buffer);
 
   const int num_bits = kBufferSize * 8;
 
@@ -436,7 +505,7 @@ TEST(BitUtilTests, TestCopyBitmap) {
   std::shared_ptr<Buffer> buffer;
   ASSERT_OK(AllocateBuffer(kBufferSize, &buffer));
   memset(buffer->mutable_data(), 0, kBufferSize);
-  test::random_bytes(kBufferSize, 0, buffer->mutable_data());
+  random_bytes(kBufferSize, 0, buffer->mutable_data());
 
   const uint8_t* src = buffer->data();
 
@@ -456,18 +525,104 @@ TEST(BitUtilTests, TestCopyBitmap) {
   }
 }
 
-TEST(BitUtil, Ceil) {
-  EXPECT_EQ(BitUtil::Ceil(0, 1), 0);
-  EXPECT_EQ(BitUtil::Ceil(1, 1), 1);
-  EXPECT_EQ(BitUtil::Ceil(1, 2), 1);
-  EXPECT_EQ(BitUtil::Ceil(1, 8), 1);
-  EXPECT_EQ(BitUtil::Ceil(7, 8), 1);
-  EXPECT_EQ(BitUtil::Ceil(8, 8), 1);
-  EXPECT_EQ(BitUtil::Ceil(9, 8), 2);
-  EXPECT_EQ(BitUtil::Ceil(9, 9), 1);
-  EXPECT_EQ(BitUtil::Ceil(10000000000, 10), 1000000000);
-  EXPECT_EQ(BitUtil::Ceil(10, 10000000000), 1);
-  EXPECT_EQ(BitUtil::Ceil(100000000000, 10000000000), 10);
+TEST(BitUtilTests, TestCopyBitmapPreAllocated) {
+  const int kBufferSize = 1000;
+  std::vector<int64_t> lengths = {kBufferSize * 8 - 4, kBufferSize * 8};
+  std::vector<int64_t> offsets = {0, 12, 16, 32, 37, 63, 64, 128};
+
+  std::shared_ptr<Buffer> buffer;
+  ASSERT_OK(AllocateBuffer(kBufferSize, &buffer));
+  memset(buffer->mutable_data(), 0, kBufferSize);
+  random_bytes(kBufferSize, 0, buffer->mutable_data());
+  const uint8_t* src = buffer->data();
+
+  std::shared_ptr<Buffer> other_buffer;
+  // Add 16 byte padding on both sides
+  ASSERT_OK(AllocateBuffer(kBufferSize + 32, &other_buffer));
+  memset(other_buffer->mutable_data(), 0, kBufferSize + 32);
+  random_bytes(kBufferSize + 32, 0, other_buffer->mutable_data());
+  const uint8_t* other = other_buffer->data();
+
+  for (int64_t num_bits : lengths) {
+    for (int64_t offset : offsets) {
+      for (int64_t dest_offset : offsets) {
+        const int64_t copy_length = num_bits - offset;
+
+        std::shared_ptr<Buffer> copy;
+        ASSERT_OK(AllocateBuffer(other_buffer->size(), &copy));
+        memcpy(copy->mutable_data(), other_buffer->data(), other_buffer->size());
+        CopyBitmap(src, offset, copy_length, copy->mutable_data(), dest_offset);
+
+        for (int64_t i = 0; i < dest_offset; ++i) {
+          ASSERT_EQ(BitUtil::GetBit(other, i), BitUtil::GetBit(copy->data(), i));
+        }
+        for (int64_t i = 0; i < copy_length; ++i) {
+          ASSERT_EQ(BitUtil::GetBit(src, i + offset),
+                    BitUtil::GetBit(copy->data(), i + dest_offset));
+        }
+        for (int64_t i = dest_offset + copy_length; i < (other_buffer->size() * 8); ++i) {
+          ASSERT_EQ(BitUtil::GetBit(other, i), BitUtil::GetBit(copy->data(), i));
+        }
+      }
+    }
+  }
+}
+
+TEST(BitUtilTests, TestCopyAndInvertBitmapPreAllocated) {
+  const int kBufferSize = 1000;
+  std::vector<int64_t> lengths = {kBufferSize * 8 - 4, kBufferSize * 8};
+  std::vector<int64_t> offsets = {0, 12, 16, 32, 37, 63, 64, 128};
+
+  std::shared_ptr<Buffer> buffer;
+  ASSERT_OK(AllocateBuffer(kBufferSize, &buffer));
+  memset(buffer->mutable_data(), 0, kBufferSize);
+  random_bytes(kBufferSize, 0, buffer->mutable_data());
+  const uint8_t* src = buffer->data();
+
+  std::shared_ptr<Buffer> other_buffer;
+  // Add 16 byte padding on both sides
+  ASSERT_OK(AllocateBuffer(kBufferSize + 32, &other_buffer));
+  memset(other_buffer->mutable_data(), 0, kBufferSize + 32);
+  random_bytes(kBufferSize + 32, 0, other_buffer->mutable_data());
+  const uint8_t* other = other_buffer->data();
+
+  for (int64_t num_bits : lengths) {
+    for (int64_t offset : offsets) {
+      for (int64_t dest_offset : offsets) {
+        const int64_t copy_length = num_bits - offset;
+
+        std::shared_ptr<Buffer> copy;
+        ASSERT_OK(AllocateBuffer(other_buffer->size(), &copy));
+        memcpy(copy->mutable_data(), other_buffer->data(), other_buffer->size());
+        InvertBitmap(src, offset, copy_length, copy->mutable_data(), dest_offset);
+
+        for (int64_t i = 0; i < dest_offset; ++i) {
+          ASSERT_EQ(BitUtil::GetBit(other, i), BitUtil::GetBit(copy->data(), i));
+        }
+        for (int64_t i = 0; i < copy_length; ++i) {
+          ASSERT_EQ(BitUtil::GetBit(src, i + offset),
+                    !BitUtil::GetBit(copy->data(), i + dest_offset));
+        }
+        for (int64_t i = dest_offset + copy_length; i < (other_buffer->size() * 8); ++i) {
+          ASSERT_EQ(BitUtil::GetBit(other, i), BitUtil::GetBit(copy->data(), i));
+        }
+      }
+    }
+  }
+}
+
+TEST(BitUtil, CeilDiv) {
+  EXPECT_EQ(BitUtil::CeilDiv(0, 1), 0);
+  EXPECT_EQ(BitUtil::CeilDiv(1, 1), 1);
+  EXPECT_EQ(BitUtil::CeilDiv(1, 2), 1);
+  EXPECT_EQ(BitUtil::CeilDiv(1, 8), 1);
+  EXPECT_EQ(BitUtil::CeilDiv(7, 8), 1);
+  EXPECT_EQ(BitUtil::CeilDiv(8, 8), 1);
+  EXPECT_EQ(BitUtil::CeilDiv(9, 8), 2);
+  EXPECT_EQ(BitUtil::CeilDiv(9, 9), 1);
+  EXPECT_EQ(BitUtil::CeilDiv(10000000000, 10), 1000000000);
+  EXPECT_EQ(BitUtil::CeilDiv(10, 10000000000), 1);
+  EXPECT_EQ(BitUtil::CeilDiv(100000000000, 10000000000), 10);
 }
 
 TEST(BitUtil, RoundUp) {
@@ -480,31 +635,6 @@ TEST(BitUtil, RoundUp) {
   EXPECT_EQ(BitUtil::RoundUp(10000000001, 10), 10000000010);
   EXPECT_EQ(BitUtil::RoundUp(10, 10000000000), 10000000000);
   EXPECT_EQ(BitUtil::RoundUp(100000000000, 10000000000), 100000000000);
-}
-
-TEST(BitUtil, RoundDown) {
-  EXPECT_EQ(BitUtil::RoundDown(0, 1), 0);
-  EXPECT_EQ(BitUtil::RoundDown(1, 1), 1);
-  EXPECT_EQ(BitUtil::RoundDown(1, 2), 0);
-  EXPECT_EQ(BitUtil::RoundDown(6, 2), 6);
-  EXPECT_EQ(BitUtil::RoundDown(7, 3), 6);
-  EXPECT_EQ(BitUtil::RoundDown(9, 9), 9);
-  EXPECT_EQ(BitUtil::RoundDown(10000000001, 10), 10000000000);
-  EXPECT_EQ(BitUtil::RoundDown(10, 10000000000), 0);
-  EXPECT_EQ(BitUtil::RoundDown(100000000000, 10000000000), 100000000000);
-}
-
-TEST(BitUtil, Popcount) {
-  EnsureCpuInfoInitialized();
-
-  EXPECT_EQ(BitUtil::Popcount(BOOST_BINARY(0 1 0 1 0 1 0 1)), 4);
-  EXPECT_EQ(BitUtil::PopcountNoHw(BOOST_BINARY(0 1 0 1 0 1 0 1)), 4);
-  EXPECT_EQ(BitUtil::Popcount(BOOST_BINARY(1 1 1 1 0 1 0 1)), 6);
-  EXPECT_EQ(BitUtil::PopcountNoHw(BOOST_BINARY(1 1 1 1 0 1 0 1)), 6);
-  EXPECT_EQ(BitUtil::Popcount(BOOST_BINARY(1 1 1 1 1 1 1 1)), 8);
-  EXPECT_EQ(BitUtil::PopcountNoHw(BOOST_BINARY(1 1 1 1 1 1 1 1)), 8);
-  EXPECT_EQ(BitUtil::Popcount(0), 0);
-  EXPECT_EQ(BitUtil::PopcountNoHw(0), 0);
 }
 
 TEST(BitUtil, TrailingBits) {
@@ -549,10 +679,63 @@ TEST(BitUtil, Log2) {
   EXPECT_EQ(BitUtil::Log2(3), 2);
   EXPECT_EQ(BitUtil::Log2(4), 2);
   EXPECT_EQ(BitUtil::Log2(5), 3);
+  EXPECT_EQ(BitUtil::Log2(8), 3);
+  EXPECT_EQ(BitUtil::Log2(9), 4);
   EXPECT_EQ(BitUtil::Log2(INT_MAX), 31);
   EXPECT_EQ(BitUtil::Log2(UINT_MAX), 32);
   EXPECT_EQ(BitUtil::Log2(ULLONG_MAX), 64);
 }
+
+TEST(BitUtil, NumRequiredBits) {
+  EXPECT_EQ(BitUtil::NumRequiredBits(0), 0);
+  EXPECT_EQ(BitUtil::NumRequiredBits(1), 1);
+  EXPECT_EQ(BitUtil::NumRequiredBits(2), 2);
+  EXPECT_EQ(BitUtil::NumRequiredBits(3), 2);
+  EXPECT_EQ(BitUtil::NumRequiredBits(4), 3);
+  EXPECT_EQ(BitUtil::NumRequiredBits(5), 3);
+  EXPECT_EQ(BitUtil::NumRequiredBits(7), 3);
+  EXPECT_EQ(BitUtil::NumRequiredBits(8), 4);
+  EXPECT_EQ(BitUtil::NumRequiredBits(9), 4);
+  EXPECT_EQ(BitUtil::NumRequiredBits(UINT_MAX - 1), 32);
+  EXPECT_EQ(BitUtil::NumRequiredBits(UINT_MAX), 32);
+  EXPECT_EQ(BitUtil::NumRequiredBits(static_cast<uint64_t>(UINT_MAX) + 1), 33);
+  EXPECT_EQ(BitUtil::NumRequiredBits(ULLONG_MAX / 2), 63);
+  EXPECT_EQ(BitUtil::NumRequiredBits(ULLONG_MAX / 2 + 1), 64);
+  EXPECT_EQ(BitUtil::NumRequiredBits(ULLONG_MAX - 1), 64);
+  EXPECT_EQ(BitUtil::NumRequiredBits(ULLONG_MAX), 64);
+}
+
+#define U32(x) static_cast<uint32_t>(x)
+#define U64(x) static_cast<uint64_t>(x)
+
+TEST(BitUtil, CountLeadingZeros) {
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U32(0)), 32);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U32(1)), 31);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U32(2)), 30);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U32(3)), 30);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U32(4)), 29);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U32(7)), 29);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U32(8)), 28);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U32(UINT_MAX / 2)), 1);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U32(UINT_MAX / 2 + 1)), 0);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U32(UINT_MAX)), 0);
+
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U64(0)), 64);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U64(1)), 63);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U64(2)), 62);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U64(3)), 62);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U64(4)), 61);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U64(7)), 61);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U64(8)), 60);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U64(UINT_MAX)), 32);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U64(UINT_MAX) + 1), 31);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U64(ULLONG_MAX / 2)), 1);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U64(ULLONG_MAX / 2 + 1)), 0);
+  EXPECT_EQ(BitUtil::CountLeadingZeros(U64(ULLONG_MAX)), 0);
+}
+
+#undef U32
+#undef U64
 
 TEST(BitUtil, RoundUpToPowerOf2) {
   EXPECT_EQ(BitUtil::RoundUpToPowerOf2(7, 8), 8);
@@ -560,39 +743,10 @@ TEST(BitUtil, RoundUpToPowerOf2) {
   EXPECT_EQ(BitUtil::RoundUpToPowerOf2(9, 8), 16);
 }
 
-TEST(BitUtil, RoundDownToPowerOf2) {
-  EXPECT_EQ(BitUtil::RoundDownToPowerOf2(7, 8), 0);
-  EXPECT_EQ(BitUtil::RoundDownToPowerOf2(8, 8), 8);
-  EXPECT_EQ(BitUtil::RoundDownToPowerOf2(9, 8), 8);
-}
-
-TEST(BitUtil, RoundUpDown) {
-  EXPECT_EQ(BitUtil::RoundUpNumBytes(7), 1);
-  EXPECT_EQ(BitUtil::RoundUpNumBytes(8), 1);
-  EXPECT_EQ(BitUtil::RoundUpNumBytes(9), 2);
-  EXPECT_EQ(BitUtil::RoundDownNumBytes(7), 0);
-  EXPECT_EQ(BitUtil::RoundDownNumBytes(8), 1);
-  EXPECT_EQ(BitUtil::RoundDownNumBytes(9), 1);
-
-  EXPECT_EQ(BitUtil::RoundUpNumi32(31), 1);
-  EXPECT_EQ(BitUtil::RoundUpNumi32(32), 1);
-  EXPECT_EQ(BitUtil::RoundUpNumi32(33), 2);
-  EXPECT_EQ(BitUtil::RoundDownNumi32(31), 0);
-  EXPECT_EQ(BitUtil::RoundDownNumi32(32), 1);
-  EXPECT_EQ(BitUtil::RoundDownNumi32(33), 1);
-
-  EXPECT_EQ(BitUtil::RoundUpNumi64(63), 1);
-  EXPECT_EQ(BitUtil::RoundUpNumi64(64), 1);
-  EXPECT_EQ(BitUtil::RoundUpNumi64(65), 2);
-  EXPECT_EQ(BitUtil::RoundDownNumi64(63), 0);
-  EXPECT_EQ(BitUtil::RoundDownNumi64(64), 1);
-  EXPECT_EQ(BitUtil::RoundDownNumi64(65), 1);
-}
-
-void TestZigZag(int32_t v) {
-  uint8_t buffer[BitReader::MAX_VLQ_BYTE_LEN];
-  BitWriter writer(buffer, sizeof(buffer));
-  BitReader reader(buffer, sizeof(buffer));
+static void TestZigZag(int32_t v) {
+  uint8_t buffer[BitUtil::BitReader::MAX_VLQ_BYTE_LEN];
+  BitUtil::BitWriter writer(buffer, sizeof(buffer));
+  BitUtil::BitReader reader(buffer, sizeof(buffer));
   writer.PutZigZagVlqInt(v);
   int32_t result;
   EXPECT_TRUE(reader.GetZigZagVlqInt(&result));

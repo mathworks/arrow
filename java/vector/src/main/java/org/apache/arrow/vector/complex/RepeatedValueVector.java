@@ -1,13 +1,12 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,13 +24,13 @@ import org.apache.arrow.vector.ValueVector;
 /**
  * An abstraction representing repeated value vectors.
  *
- * A repeated vector contains values that may either be flat or nested. A value consists of zero or more cells(inner values).
- * Current design maintains data and offsets vectors. Each cell is stored in the data vector. Repeated vector
- * uses the offset vector to determine the sequence of cells pertaining to an individual value.
+ * A repeated vector contains values that may either be flat or nested. A value consists of zero or more
+ * cells(inner values). Current design maintains data and offsets vectors. Each cell is stored in the data vector.
+ * Repeated vector uses the offset vector to determine the sequence of cells pertaining to an individual value.
  */
 public interface RepeatedValueVector extends ValueVector, DensityAwareVector {
 
-  final static int DEFAULT_REPEAT_PER_RECORD = 5;
+  static final int DEFAULT_REPEAT_PER_RECORD = 5;
 
   /**
    * @return the underlying offset vector or null if none exists.

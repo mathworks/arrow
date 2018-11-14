@@ -26,6 +26,7 @@ from pyarrow.includes.libarrow cimport *
 from pyarrow.lib cimport (check_status,
                           MemoryPool, maybe_unbox_memory_pool,
                           Schema, pyarrow_wrap_schema,
+                          pyarrow_wrap_batch,
                           RecordBatch,
                           pyarrow_wrap_table,
                           get_reader)
@@ -41,13 +42,13 @@ cdef class ORCReader:
     def __cinit__(self, MemoryPool memory_pool=None):
         self.allocator = maybe_unbox_memory_pool(memory_pool)
 
-    def open(self, object source):
+    def open(self, object source, c_bool use_memory_map=True):
         cdef:
             shared_ptr[RandomAccessFile] rd_handle
 
         self.source = source
 
-        get_reader(source, &rd_handle)
+        get_reader(source, use_memory_map, &rd_handle)
         with nogil:
             check_status(ORCFileReader.Open(rd_handle, self.allocator,
                                             &self.reader))
@@ -93,9 +94,7 @@ cdef class ORCReader:
                 (check_status(deref(self.reader)
                               .ReadStripe(stripe, indices, &sp_record_batch)))
 
-        batch = RecordBatch()
-        batch.init(sp_record_batch)
-        return batch
+        return pyarrow_wrap_batch(sp_record_batch)
 
     def read(self, include_indices=None):
         cdef:

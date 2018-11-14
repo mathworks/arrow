@@ -98,6 +98,7 @@ class build_ext(_build_ext):
                       'build type (debug or release), default release'),
                      ('boost-namespace=', None,
                       'namespace of boost (default: boost)'),
+                     ('with-cuda', None, 'build the Cuda extension'),
                      ('with-parquet', None, 'build the Parquet extension'),
                      ('with-static-parquet', None, 'link parquet statically'),
                      ('with-static-boost', None, 'link boost statically'),
@@ -105,6 +106,7 @@ class build_ext(_build_ext):
                      ('with-tensorflow', None,
                       'build pyarrow with TensorFlow support'),
                      ('with-orc', None, 'build the ORC extension'),
+                     ('with-gandiva', None, 'build the Gandiva extension'),
                      ('generate-coverage', None,
                       'enable Cython code coverage'),
                      ('bundle-boost', None,
@@ -132,6 +134,8 @@ class build_ext(_build_ext):
             if not hasattr(sys, 'gettotalrefcount'):
                 self.build_type = 'release'
 
+        self.with_cuda = strtobool(
+            os.environ.get('PYARROW_WITH_CUDA', '0'))
         self.with_parquet = strtobool(
             os.environ.get('PYARROW_WITH_PARQUET', '0'))
         self.with_static_parquet = strtobool(
@@ -144,6 +148,8 @@ class build_ext(_build_ext):
             os.environ.get('PYARROW_WITH_TENSORFLOW', '0'))
         self.with_orc = strtobool(
             os.environ.get('PYARROW_WITH_ORC', '0'))
+        self.with_gandiva = strtobool(
+            os.environ.get('PYARROW_WITH_GANDIVA', '0'))
         self.generate_coverage = strtobool(
             os.environ.get('PYARROW_GENERATE_COVERAGE', '0'))
         self.bundle_arrow_cpp = strtobool(
@@ -152,7 +158,10 @@ class build_ext(_build_ext):
             os.environ.get('PYARROW_BUNDLE_BOOST', '0'))
 
     CYTHON_MODULE_NAMES = [
+        'gandiva',
         'lib',
+        '_csv',
+        '_cuda',
         '_parquet',
         '_orc',
         '_plasma']
@@ -189,6 +198,8 @@ class build_ext(_build_ext):
 
             if self.cmake_generator:
                 cmake_options += ['-G', self.cmake_generator]
+            if self.with_cuda:
+                cmake_options.append('-DPYARROW_BUILD_CUDA=on')
             if self.with_parquet:
                 cmake_options.append('-DPYARROW_BUILD_PARQUET=on')
             if self.with_static_parquet:
@@ -206,6 +217,9 @@ class build_ext(_build_ext):
 
             if self.with_orc:
                 cmake_options.append('-DPYARROW_BUILD_ORC=on')
+
+            if self.with_gandiva:
+                cmake_options.append('-DPYARROW_BUILD_GANDIVA=on')
 
             if len(self.cmake_cxxflags) > 0:
                 cmake_options.append('-DPYARROW_CXXFLAGS={0}'
@@ -242,13 +256,13 @@ class build_ext(_build_ext):
             else:
                 build_tool_args.append('--')
                 if os.environ.get('PYARROW_BUILD_VERBOSE', '0') == '1':
-                    build_tool_args.append('VERBOSE=1')
+                    cmake_options.append('-DCMAKE_VERBOSE_MAKEFILE=ON')
                 if os.environ.get('PYARROW_PARALLEL'):
                     build_tool_args.append(
                         '-j{0}'.format(os.environ['PYARROW_PARALLEL']))
 
             # Generate the build files
-            print("-- Runnning cmake for pyarrow")
+            print("-- Running cmake for pyarrow")
             self.spawn(['cmake'] + extra_cmake_args + cmake_options + [source])
             print("-- Finished cmake for pyarrow")
 
@@ -277,6 +291,8 @@ class build_ext(_build_ext):
                 print(pjoin(build_lib, 'pyarrow'))
                 move_shared_libs(build_prefix, build_lib, "arrow")
                 move_shared_libs(build_prefix, build_lib, "arrow_python")
+                if self.with_cuda:
+                    move_shared_libs(build_prefix, build_lib, "arrow_gpu")
                 if self.with_plasma:
                     move_shared_libs(build_prefix, build_lib, "plasma")
                 if self.with_parquet and not self.with_static_parquet:
@@ -291,6 +307,10 @@ class build_ext(_build_ext):
                     move_shared_libs(
                         build_prefix, build_lib,
                         "{}_regex".format(self.boost_namespace))
+                if sys.platform == 'win32':
+                    # zlib uses zlib.dll for Windows
+                    zlib_lib_name = 'zlib'
+                    move_shared_libs(build_prefix, build_lib, zlib_lib_name)
 
             print('Bundling includes: ' + pjoin(build_prefix, 'include'))
             if os.path.exists(pjoin(build_lib, 'pyarrow', 'include')):
@@ -345,10 +365,10 @@ class build_ext(_build_ext):
 
             if self.with_plasma:
                 # Move the plasma store
-                source = os.path.join(self.build_type, "plasma_store")
+                source = os.path.join(self.build_type, "plasma_store_server")
                 target = os.path.join(build_lib,
                                       self._get_build_dir(),
-                                      "plasma_store")
+                                      "plasma_store_server")
                 shutil.move(source, target)
 
     def _failure_permitted(self, name):
@@ -357,6 +377,10 @@ class build_ext(_build_ext):
         if name == '_plasma' and not self.with_plasma:
             return True
         if name == '_orc' and not self.with_orc:
+            return True
+        if name == '_cuda' and not self.with_cuda:
+            return True
+        if name == 'gandiva' and not self.with_gandiva:
             return True
         return False
 
@@ -457,18 +481,53 @@ def _move_shared_libs_unix(build_prefix, build_lib, lib_name):
             os.symlink(lib_filename, link_name)
 
 
-# In the case of a git-archive, we don't have any version information
-# from the SCM to infer a version. The only source is the java/pom.xml.
-#
-# Note that this is only the case for git-archives. sdist tarballs have
-# all relevant information (but not the Java sources).
-if not os.path.exists('../.git') and os.path.exists('../java/pom.xml'):
-    import xml.etree.ElementTree as ET
-    tree = ET.parse('../java/pom.xml')
-    version_tag = list(tree.getroot().findall(
-        '{http://maven.apache.org/POM/4.0.0}version'))[0]
-    os.environ["SETUPTOOLS_SCM_PRETEND_VERSION"] = version_tag.text.replace(
-        "-SNAPSHOT", "a0")
+# If the event of not running from a git clone (e.g. from a git archive
+# or a Python sdist), see if we can set the version number ourselves
+if (not os.path.exists('../.git')
+        and not os.environ.get('SETUPTOOLS_SCM_PRETEND_VERSION')):
+    if os.path.exists('PKG-INFO'):
+        # We're probably in a Python sdist, setuptools_scm will handle fine
+        pass
+    elif os.path.exists('../java/pom.xml'):
+        # We're probably in a git archive
+        import xml.etree.ElementTree as ET
+        tree = ET.parse('../java/pom.xml')
+        version_tag = list(tree.getroot().findall(
+            '{http://maven.apache.org/POM/4.0.0}version'))[0]
+        use_setuptools_scm = False
+        os.environ['SETUPTOOLS_SCM_PRETEND_VERSION'] = \
+            version_tag.text.replace("-SNAPSHOT", "a0")
+    else:
+        raise RuntimeError("""\
+            No reliable source available to get Arrow version.
+
+            This is either because you copied the python/ directory yourself
+            outside of a git clone or source archive, or because you ran
+            `pip install` on the python/ directory.
+
+            * Recommended workaround: first run `python sdist`, then
+              `pip install` the resulting source distribution.
+
+            * If you're looking for an editable (in-place) install,
+              `python setup.py develop` should work fine in place of
+              `pip install -e .`.
+
+            * If you really want to `pip install` the python/ directory,
+              set the SETUPTOOLS_SCM_PRETEND_VERSION environment variable
+              to force the Arrow version to the given value.
+            """)
+
+
+def parse_git(root, **kwargs):
+    """
+    Parse function for setuptools_scm that ignores tags for non-C++
+    subprojects, e.g. apache-arrow-js-XXX tags.
+    """
+    from setuptools_scm.git import parse
+    kwargs['describe_command'] = \
+        "git describe --dirty --tags --long --match 'apache-arrow-[0-9].*'"
+    return parse(root, **kwargs)
+
 
 with open('README.md') as f:
     long_description = f.read()
@@ -480,24 +539,10 @@ class BinaryDistribution(Distribution):
 
 
 install_requires = (
-    'numpy >= 1.10',
+    'numpy >= 1.14',
     'six >= 1.0.0',
-    'futures;python_version<"3.2"'
+    'futures; python_version < "3.2"'
 )
-
-
-def parse_version(root):
-    from setuptools_scm import version_from_scm
-    import setuptools_scm.git
-    describe = (setuptools_scm.git.DEFAULT_DESCRIBE +
-                " --match 'apache-arrow-[0-9]*'")
-    # Strip catchall from the commandline
-    describe = describe.replace("--match *.*", "")
-    version = setuptools_scm.git.parse(root, describe)
-    if not version:
-        return version_from_scm(root)
-    else:
-        return version
 
 
 # Only include pytest-runner in setup_requires if we're invoking tests
@@ -505,6 +550,7 @@ if {'pytest', 'test', 'ptr'}.intersection(sys.argv):
     setup_requires = ['pytest-runner']
 else:
     setup_requires = []
+
 
 setup(
     name="pyarrow",
@@ -524,11 +570,14 @@ setup(
             'plasma_store = pyarrow:_plasma_store_entry_point'
         ]
     },
-    use_scm_version={"root": "..", "relative_to": __file__,
-                     "parse": parse_version},
+    use_scm_version={"root": os.path.dirname(setup_dir),
+                     "parse": parse_git,
+                     "write_to": os.path.join(setup_dir,
+                                              "pyarrow/_generated_version.py"),
+                     },
     setup_requires=['setuptools_scm', 'cython >= 0.27'] + setup_requires,
     install_requires=install_requires,
-    tests_require=['pytest', 'pandas'],
+    tests_require=['pytest', 'pandas', 'pathlib2; python_version < "3.4"'],
     description="Python library for Apache Arrow",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -536,8 +585,9 @@ setup(
         'License :: OSI Approved :: Apache Software License',
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6'
-        ],
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+    ],
     license='Apache License, Version 2.0',
     maintainer="Apache Arrow Developers",
     maintainer_email="dev@arrow.apache.org",

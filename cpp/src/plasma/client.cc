@@ -40,6 +40,7 @@
 #include <deque>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "arrow/buffer.h"
@@ -66,7 +67,12 @@ using arrow::gpu::CudaDeviceManager;
 
 #define XXH64_DEFAULT_SEED 0
 
+namespace fb = plasma::flatbuf;
+
 namespace plasma {
+
+using fb::MessageType;
+using fb::PlasmaError;
 
 using arrow::MutableBuffer;
 
@@ -168,6 +174,9 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
   Status Create(const ObjectID& object_id, int64_t data_size, const uint8_t* metadata,
                 int64_t metadata_size, std::shared_ptr<Buffer>* data, int device_num = 0);
 
+  Status CreateAndSeal(const ObjectID& object_id, const std::string& data,
+                       const std::string& metadata);
+
   Status Get(const std::vector<ObjectID>& object_ids, int64_t timeout_ms,
              std::vector<ObjectBuffer>* object_buffers);
 
@@ -177,6 +186,8 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
   Status Release(const ObjectID& object_id);
 
   Status Contains(const ObjectID& object_id, bool* has_object);
+
+  Status List(ObjectTable* objects);
 
   Status Abort(const ObjectID& object_id);
 
@@ -225,17 +236,21 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
                         const ObjectID&, const std::shared_ptr<Buffer>&)>& wrap_buffer,
                     ObjectBuffer* object_buffers);
 
-  uint8_t* lookup_or_mmap(int fd, int store_fd_val, int64_t map_size);
+  uint8_t* LookupOrMmap(int fd, int store_fd_val, int64_t map_size);
 
-  uint8_t* lookup_mmapped_file(int store_fd_val);
+  uint8_t* LookupMmappedFile(int store_fd_val);
 
-  void increment_object_count(const ObjectID& object_id, PlasmaObject* object,
-                              bool is_sealed);
+  void IncrementObjectCount(const ObjectID& object_id, PlasmaObject* object,
+                            bool is_sealed);
 
-  bool compute_object_hash_parallel(XXH64_state_t* hash_state, const unsigned char* data,
-                                    int64_t nbytes);
+  bool ComputeObjectHashParallel(XXH64_state_t* hash_state, const unsigned char* data,
+                                 int64_t nbytes);
 
-  uint64_t compute_object_hash(const ObjectBuffer& obj_buffer);
+  uint64_t ComputeObjectHash(const ObjectBuffer& obj_buffer);
+
+  uint64_t ComputeObjectHash(const uint8_t* data, int64_t data_size,
+                             const uint8_t* metadata, int64_t metadata_size,
+                             int device_num);
 
   /// File descriptor of the Unix domain socket that connects to the store.
   int store_conn_;
@@ -264,6 +279,8 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
   /// information to make sure that it does not delay in releasing so much
   /// memory that the store is unable to evict enough objects to free up space.
   int64_t store_capacity_;
+  /// A hash set to record the ids that users want to delete but still in use.
+  std::unordered_set<ObjectID> deletion_cache_;
 
 #ifdef PLASMA_GPU
   /// Cuda Device Manager.
@@ -275,7 +292,7 @@ PlasmaBuffer::~PlasmaBuffer() { ARROW_UNUSED(client_->Release(object_id_)); }
 
 PlasmaClient::Impl::Impl() {
 #ifdef PLASMA_GPU
-  CudaDeviceManager::GetInstance(&manager_);
+  DCHECK_OK(CudaDeviceManager::GetInstance(&manager_));
 #endif
 }
 
@@ -284,7 +301,7 @@ PlasmaClient::Impl::~Impl() {}
 // If the file descriptor fd has been mmapped in this client process before,
 // return the pointer that was returned by mmap, otherwise mmap it and store the
 // pointer in a hash table.
-uint8_t* PlasmaClient::Impl::lookup_or_mmap(int fd, int store_fd_val, int64_t map_size) {
+uint8_t* PlasmaClient::Impl::LookupOrMmap(int fd, int store_fd_val, int64_t map_size) {
   auto entry = mmap_table_.find(store_fd_val);
   if (entry != mmap_table_.end()) {
     close(fd);
@@ -310,7 +327,7 @@ uint8_t* PlasmaClient::Impl::lookup_or_mmap(int fd, int store_fd_val, int64_t ma
 
 // Get a pointer to a file that we know has been memory mapped in this client
 // process before.
-uint8_t* PlasmaClient::Impl::lookup_mmapped_file(int store_fd_val) {
+uint8_t* PlasmaClient::Impl::LookupMmappedFile(int store_fd_val) {
   auto entry = mmap_table_.find(store_fd_val);
   ARROW_CHECK(entry != mmap_table_.end());
   return entry->second.pointer;
@@ -321,8 +338,8 @@ bool PlasmaClient::Impl::IsInUse(const ObjectID& object_id) {
   return (elem != objects_in_use_.end());
 }
 
-void PlasmaClient::Impl::increment_object_count(const ObjectID& object_id,
-                                                PlasmaObject* object, bool is_sealed) {
+void PlasmaClient::Impl::IncrementObjectCount(const ObjectID& object_id,
+                                              PlasmaObject* object, bool is_sealed) {
   // Increment the count of the object to track the fact that it is being used.
   // The corresponding decrement should happen in PlasmaClient::Release.
   auto elem = objects_in_use_.find(object_id);
@@ -383,7 +400,7 @@ Status PlasmaClient::Impl::Create(const ObjectID& object_id, int64_t data_size,
     // The metadata should come right after the data.
     ARROW_CHECK(object.metadata_offset == object.data_offset + data_size);
     *data = std::make_shared<MutableBuffer>(
-        lookup_or_mmap(fd, store_fd, mmap_size) + object.data_offset, data_size);
+        LookupOrMmap(fd, store_fd, mmap_size) + object.data_offset, data_size);
     // If plasma_create is being called from a transfer, then we will not copy the
     // metadata here. The metadata will be written along with the data streamed
     // from the transfer.
@@ -403,7 +420,7 @@ Status PlasmaClient::Impl::Create(const ObjectID& object_id, int64_t data_size,
     if (metadata != NULL) {
       // Copy the metadata to the buffer.
       CudaBufferWriter writer(std::dynamic_pointer_cast<CudaBuffer>(*data));
-      writer.WriteAt(object.data_size, metadata, metadata_size);
+      RETURN_NOT_OK(writer.WriteAt(object.data_size, metadata, metadata_size));
     }
 #else
     ARROW_LOG(FATAL) << "Arrow GPU library is not enabled.";
@@ -412,15 +429,36 @@ Status PlasmaClient::Impl::Create(const ObjectID& object_id, int64_t data_size,
 
   // Increment the count of the number of instances of this object that this
   // client is using. A call to PlasmaClient::Release is required to decrement
-  // this
-  // count. Cache the reference to the object.
-  increment_object_count(object_id, &object, false);
+  // this count. Cache the reference to the object.
+  IncrementObjectCount(object_id, &object, false);
   // We increment the count a second time (and the corresponding decrement will
   // happen in a PlasmaClient::Release call in plasma_seal) so even if the
-  // buffer
-  // returned by PlasmaClient::Dreate goes out of scope, the object does not get
-  // released before the call to PlasmaClient::Seal happens.
-  increment_object_count(object_id, &object, false);
+  // buffer returned by PlasmaClient::Create goes out of scope, the object does
+  // not get released before the call to PlasmaClient::Seal happens.
+  IncrementObjectCount(object_id, &object, false);
+  return Status::OK();
+}
+
+Status PlasmaClient::Impl::CreateAndSeal(const ObjectID& object_id,
+                                         const std::string& data,
+                                         const std::string& metadata) {
+  ARROW_LOG(DEBUG) << "called CreateAndSeal on conn " << store_conn_;
+
+  // Compute the object hash.
+  static unsigned char digest[kDigestSize];
+  // CreateAndSeal currently only supports device_num = 0, which corresponds to
+  // the host.
+  int device_num = 0;
+  uint64_t hash = ComputeObjectHash(
+      reinterpret_cast<const uint8_t*>(data.data()), data.size(),
+      reinterpret_cast<const uint8_t*>(metadata.data()), metadata.size(), device_num);
+  memcpy(&digest[0], &hash, sizeof(hash));
+
+  RETURN_NOT_OK(SendCreateAndSealRequest(store_conn_, object_id, data, metadata, digest));
+  std::vector<uint8_t> buffer;
+  RETURN_NOT_OK(
+      PlasmaReceive(store_conn_, MessageType::PlasmaCreateAndSealReply, &buffer));
+  RETURN_NOT_OK(ReadCreateAndSealReply(buffer.data(), buffer.size()));
   return Status::OK();
 }
 
@@ -437,16 +475,21 @@ Status PlasmaClient::Impl::GetBuffers(
       // This object is not currently in use by this client, so we need to send
       // a request to the store.
       all_present = false;
-    } else {
-      // NOTE: If the object is still unsealed, we will deadlock, since we must
-      // have been the one who created it.
-      ARROW_CHECK(object_entry->second->is_sealed)
+    } else if (!object_entry->second->is_sealed) {
+      // This client created the object but hasn't sealed it. If we call Get
+      // with no timeout, we will deadlock, because this client won't be able to
+      // call Seal.
+      ARROW_CHECK(timeout_ms != -1)
           << "Plasma client called get on an unsealed object that it created";
+      ARROW_LOG(WARNING)
+          << "Attempting to get an object that this client created but hasn't sealed.";
+      all_present = false;
+    } else {
       PlasmaObject* object = &object_entry->second->object;
       std::shared_ptr<Buffer> physical_buf;
 
       if (object->device_num == 0) {
-        uint8_t* data = lookup_mmapped_file(object->store_fd);
+        uint8_t* data = LookupMmappedFile(object->store_fd);
         physical_buf = std::make_shared<Buffer>(
             data + object->data_offset, object->data_size + object->metadata_size);
       } else {
@@ -463,7 +506,7 @@ Status PlasmaClient::Impl::GetBuffers(
       object_buffers[i].device_num = object->device_num;
       // Increment the count of the number of instances of this object that this
       // client is using. Cache the reference to the object.
-      increment_object_count(object_ids[i], object, true);
+      IncrementObjectCount(object_ids[i], object, true);
     }
   }
 
@@ -490,7 +533,7 @@ Status PlasmaClient::Impl::GetBuffers(
   for (size_t i = 0; i < store_fds.size(); i++) {
     int fd = recv_fd(store_conn_);
     ARROW_CHECK(fd >= 0);
-    lookup_or_mmap(fd, store_fds[i], mmap_sizes[i]);
+    LookupOrMmap(fd, store_fds[i], mmap_sizes[i]);
   }
 
   for (int64_t i = 0; i < num_objects; ++i) {
@@ -509,7 +552,7 @@ Status PlasmaClient::Impl::GetBuffers(
     if (object->data_size != -1) {
       std::shared_ptr<Buffer> physical_buf;
       if (object->device_num == 0) {
-        uint8_t* data = lookup_mmapped_file(object->store_fd);
+        uint8_t* data = LookupMmappedFile(object->store_fd);
         physical_buf = std::make_shared<Buffer>(
             data + object->data_offset, object->data_size + object->metadata_size);
       } else {
@@ -539,7 +582,7 @@ Status PlasmaClient::Impl::GetBuffers(
       object_buffers[i].device_num = object->device_num;
       // Increment the count of the number of instances of this object that this
       // client is using. Cache the reference to the object.
-      increment_object_count(received_object_ids[i], object, true);
+      IncrementObjectCount(received_object_ids[i], object, true);
     } else {
       // The object was not retrieved.  The caller can detect this condition
       // by checking the boolean value of the metadata/data buffers.
@@ -625,6 +668,11 @@ Status PlasmaClient::Impl::PerformRelease(const ObjectID& object_id) {
     // Tell the store that the client no longer needs the object.
     RETURN_NOT_OK(UnmapObject(object_id));
     RETURN_NOT_OK(SendReleaseRequest(store_conn_, object_id));
+    auto iter = deletion_cache_.find(object_id);
+    if (iter != deletion_cache_.end()) {
+      deletion_cache_.erase(object_id);
+      RETURN_NOT_OK(Delete({object_id}));
+    }
   }
   return Status::OK();
 }
@@ -634,14 +682,20 @@ Status PlasmaClient::Impl::Release(const ObjectID& object_id) {
   if (store_conn_ < 0) {
     return Status::OK();
   }
+  // If an object is in the deletion cache, handle it directly without waiting.
+  auto iter = deletion_cache_.find(object_id);
+  if (iter != deletion_cache_.end()) {
+    RETURN_NOT_OK(PerformRelease(object_id));
+    return Status::OK();
+  }
   // Add the new object to the release history.
   release_history_.push_front(object_id);
   // If there are too many bytes in use by the client or if there are too many
   // pending release calls, and there are at least some pending release calls in
   // the release_history list, then release some objects.
 
-  // TODO(wap) Evicition policy only works on host memory, and thus objects
-  //           on the GPU cannot be released currently.
+  // TODO(wap): Eviction policy only works on host memory, and thus objects on
+  // the GPU cannot be released currently.
   while ((in_use_object_bytes_ > std::min(kL3CacheSizeBytes, store_capacity_ / 100) ||
           release_history_.size() > config_.release_delay) &&
          release_history_.size() > 0) {
@@ -686,6 +740,13 @@ Status PlasmaClient::Impl::Contains(const ObjectID& object_id, bool* has_object)
   return Status::OK();
 }
 
+Status PlasmaClient::Impl::List(ObjectTable* objects) {
+  RETURN_NOT_OK(SendListRequest(store_conn_));
+  std::vector<uint8_t> buffer;
+  RETURN_NOT_OK(PlasmaReceive(store_conn_, MessageType::PlasmaListReply, &buffer));
+  return ReadListReply(buffer.data(), buffer.size(), objects);
+}
+
 static void ComputeBlockHash(const unsigned char* data, int64_t nbytes, uint64_t* hash) {
   XXH64_state_t hash_state;
   XXH64_reset(&hash_state, XXH64_DEFAULT_SEED);
@@ -693,9 +754,9 @@ static void ComputeBlockHash(const unsigned char* data, int64_t nbytes, uint64_t
   *hash = XXH64_digest(&hash_state);
 }
 
-bool PlasmaClient::Impl::compute_object_hash_parallel(XXH64_state_t* hash_state,
-                                                      const unsigned char* data,
-                                                      int64_t nbytes) {
+bool PlasmaClient::Impl::ComputeObjectHashParallel(XXH64_state_t* hash_state,
+                                                   const unsigned char* data,
+                                                   int64_t nbytes) {
   // Note that this function will likely be faster if the address of data is
   // aligned on a 64-byte boundary.
   auto pool = arrow::internal::GetCpuThreadPool();
@@ -729,27 +790,31 @@ bool PlasmaClient::Impl::compute_object_hash_parallel(XXH64_state_t* hash_state,
   return true;
 }
 
-uint64_t PlasmaClient::Impl::compute_object_hash(const ObjectBuffer& obj_buffer) {
-  DCHECK(obj_buffer.metadata);
-  DCHECK(obj_buffer.data);
+uint64_t PlasmaClient::Impl::ComputeObjectHash(const ObjectBuffer& obj_buffer) {
+  return ComputeObjectHash(obj_buffer.data->data(), obj_buffer.data->size(),
+                           obj_buffer.metadata->data(), obj_buffer.metadata->size(),
+                           obj_buffer.device_num);
+}
+
+uint64_t PlasmaClient::Impl::ComputeObjectHash(const uint8_t* data, int64_t data_size,
+                                               const uint8_t* metadata,
+                                               int64_t metadata_size, int device_num) {
+  DCHECK(metadata);
+  DCHECK(data);
   XXH64_state_t hash_state;
-  if (obj_buffer.device_num != 0) {
+  if (device_num != 0) {
     // TODO(wap): Create cuda program to hash data on gpu.
     return 0;
   }
   XXH64_reset(&hash_state, XXH64_DEFAULT_SEED);
-  if (obj_buffer.data->size() >= kBytesInMB) {
-    compute_object_hash_parallel(
-        &hash_state, reinterpret_cast<const unsigned char*>(obj_buffer.data->data()),
-        obj_buffer.data->size());
+  if (data_size >= kBytesInMB) {
+    ComputeObjectHashParallel(&hash_state, reinterpret_cast<const unsigned char*>(data),
+                              data_size);
   } else {
-    XXH64_update(&hash_state,
-                 reinterpret_cast<const unsigned char*>(obj_buffer.data->data()),
-                 obj_buffer.data->size());
+    XXH64_update(&hash_state, reinterpret_cast<const unsigned char*>(data), data_size);
   }
-  XXH64_update(&hash_state,
-               reinterpret_cast<const unsigned char*>(obj_buffer.metadata->data()),
-               obj_buffer.metadata->size());
+  XXH64_update(&hash_state, reinterpret_cast<const unsigned char*>(metadata),
+               metadata_size);
   return XXH64_digest(&hash_state);
 }
 
@@ -815,6 +880,8 @@ Status PlasmaClient::Impl::Delete(const std::vector<ObjectID>& object_ids) {
     // If the object is in used, skip it.
     if (objects_in_use_.count(object_id) == 0) {
       not_in_use_ids.push_back(object_id);
+    } else {
+      deletion_cache_.emplace(object_id);
     }
   }
   if (not_in_use_ids.size() > 0) {
@@ -850,7 +917,7 @@ Status PlasmaClient::Impl::Hash(const ObjectID& object_id, uint8_t* digest) {
     return Status::PlasmaObjectNonexistent("Object not found");
   }
   // Compute the hash.
-  uint64_t hash = compute_object_hash(object_buffers[0]);
+  uint64_t hash = ComputeObjectHash(object_buffers[0]);
   memcpy(digest, &hash, sizeof(hash));
   return Status::OK();
 }
@@ -877,11 +944,11 @@ Status PlasmaClient::Impl::Subscribe(int* fd) {
 
 Status PlasmaClient::Impl::GetNotification(int fd, ObjectID* object_id,
                                            int64_t* data_size, int64_t* metadata_size) {
-  auto notification = read_message_async(fd);
+  auto notification = ReadMessageAsync(fd);
   if (notification == NULL) {
     return Status::IOError("Failed to read object notification from Plasma socket");
   }
-  auto object_info = flatbuffers::GetRoot<ObjectInfo>(notification.get());
+  auto object_info = flatbuffers::GetRoot<fb::ObjectInfo>(notification.get());
   ARROW_CHECK(object_info->object_id()->size() == sizeof(ObjectID));
   memcpy(object_id, object_info->object_id()->data(), sizeof(ObjectID));
   if (object_info->is_deletion()) {
@@ -977,18 +1044,18 @@ Status PlasmaClient::Impl::Wait(int64_t num_object_requests,
   *num_objects_ready = 0;
   for (int i = 0; i < num_object_requests; ++i) {
     ObjectRequestType type = object_requests[i].type;
-    ObjectStatus status = object_requests[i].status;
+    auto status = static_cast<fb::ObjectStatus>(object_requests[i].location);
     switch (type) {
       case ObjectRequestType::PLASMA_QUERY_LOCAL:
-        if (status == ObjectStatus::Local) {
+        if (status == fb::ObjectStatus::Local) {
           *num_objects_ready += 1;
         }
         break;
       case ObjectRequestType::PLASMA_QUERY_ANYWHERE:
-        if (status == ObjectStatus::Local || status == ObjectStatus::Remote) {
+        if (status == fb::ObjectStatus::Local || status == fb::ObjectStatus::Remote) {
           *num_objects_ready += 1;
         } else {
-          ARROW_CHECK(status == ObjectStatus::Nonexistent);
+          ARROW_CHECK(status == fb::ObjectStatus::Nonexistent);
         }
         break;
       default:
@@ -1018,6 +1085,11 @@ Status PlasmaClient::Create(const ObjectID& object_id, int64_t data_size,
   return impl_->Create(object_id, data_size, metadata, metadata_size, data, device_num);
 }
 
+Status PlasmaClient::CreateAndSeal(const ObjectID& object_id, const std::string& data,
+                                   const std::string& metadata) {
+  return impl_->CreateAndSeal(object_id, data, metadata);
+}
+
 Status PlasmaClient::Get(const std::vector<ObjectID>& object_ids, int64_t timeout_ms,
                          std::vector<ObjectBuffer>* object_buffers) {
   return impl_->Get(object_ids, timeout_ms, object_buffers);
@@ -1035,6 +1107,8 @@ Status PlasmaClient::Release(const ObjectID& object_id) {
 Status PlasmaClient::Contains(const ObjectID& object_id, bool* has_object) {
   return impl_->Contains(object_id, has_object);
 }
+
+Status PlasmaClient::List(ObjectTable* objects) { return impl_->List(objects); }
 
 Status PlasmaClient::Abort(const ObjectID& object_id) { return impl_->Abort(object_id); }
 

@@ -18,39 +18,26 @@
 # Pretty-printing and other formatting utilities for Arrow data structures
 
 import pyarrow.lib as lib
+import warnings
+
+try:
+    from textwrap import indent
+except ImportError:
+    def indent(text, prefix):
+        return ''.join(prefix + line for line in text.splitlines(True))
 
 
-def array_format(arr, window=None):
-    values = []
-
-    if window is None or window * 2 >= len(arr):
-        for x in arr:
-            values.append(value_format(x, 0))
-        contents = _indent(',\n'.join(values), 2)
-    else:
-        for i in range(window):
-            values.append(value_format(arr[i], 0) + ',')
-        values.append('...')
-        for i in range(len(arr) - window, len(arr)):
-            formatted = value_format(arr[i], 0)
-            if i < len(arr) - 1:
-                formatted += ','
-            values.append(formatted)
-        contents = _indent('\n'.join(values), 2)
-
-    return '[\n{0}\n]'.format(contents)
+def array_format(arr, window=10):
+    warnings.warn("array_format is deprecated, use Array.format() instead",
+                  FutureWarning)
+    return arr.format(window=window)
 
 
 def value_format(x, indent_level=0):
+    warnings.warn("value_format is deprecated",
+                  FutureWarning)
     if isinstance(x, lib.ListValue):
         contents = ',\n'.join(value_format(item) for item in x)
-        return '[{0}]'.format(_indent(contents, 1).strip())
+        return '[{0}]'.format(indent(contents, ' ').strip())
     else:
         return repr(x)
-
-
-def _indent(text, spaces):
-    if spaces == 0:
-        return text
-    block = ' ' * spaces
-    return '\n'.join(block + x for x in text.split('\n'))

@@ -15,6 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -24,6 +27,7 @@
 #include "arrow/status.h"
 #include "arrow/test-util.h"
 #include "arrow/util/decimal.h"
+#include "arrow/util/macros.h"
 
 namespace arrow {
 
@@ -434,6 +438,32 @@ TEST(Decimal128Test, TestFromBigEndianBadLength) {
   Decimal128 out;
   ASSERT_RAISES(Invalid, Decimal128::FromBigEndian(0, -1, &out));
   ASSERT_RAISES(Invalid, Decimal128::FromBigEndian(0, 17, &out));
+}
+
+TEST(Decimal128Test, TestToInteger) {
+  Decimal128 value1("1234");
+  int32_t out1;
+
+  Decimal128 value2("-1234");
+  int64_t out2;
+
+  ASSERT_OK(value1.ToInteger(&out1));
+  ASSERT_EQ(1234, out1);
+
+  ASSERT_OK(value1.ToInteger(&out2));
+  ASSERT_EQ(1234, out2);
+
+  ASSERT_OK(value2.ToInteger(&out1));
+  ASSERT_EQ(-1234, out1);
+
+  ASSERT_OK(value2.ToInteger(&out2));
+  ASSERT_EQ(-1234, out2);
+
+  Decimal128 invalid_int32(static_cast<int64_t>(std::pow(2, 31)));
+  ASSERT_RAISES(Invalid, invalid_int32.ToInteger(&out1));
+
+  Decimal128 invalid_int64("12345678912345678901");
+  ASSERT_RAISES(Invalid, invalid_int64.ToInteger(&out2));
 }
 
 }  // namespace arrow

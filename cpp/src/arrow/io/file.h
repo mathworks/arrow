@@ -89,6 +89,7 @@ class ARROW_EXPORT FileOutputStream : public OutputStream {
 
   // OutputStream interface
   Status Close() override;
+  bool closed() const override;
   Status Tell(int64_t* position) const override;
 
   // Write bytes to the stream. Thread-safe
@@ -142,6 +143,7 @@ class ARROW_EXPORT ReadableFile : public RandomAccessFile {
   static Status Open(int fd, MemoryPool* pool, std::shared_ptr<ReadableFile>* file);
 
   Status Close() override;
+  bool closed() const override;
   Status Tell(int64_t* position) const override;
 
   // Read bytes from the file. Thread-safe
@@ -173,7 +175,7 @@ class ARROW_EXPORT ReadableFile : public RandomAccessFile {
 // supporting zero copy reads. The same class is used for both reading and
 // writing.
 //
-// If opening a file in a writeable mode, it is not truncated first as with
+// If opening a file in a writable mode, it is not truncated first as with
 // FileOutputStream
 class ARROW_EXPORT MemoryMappedFile : public ReadWriteFileInterface {
  public:
@@ -188,6 +190,8 @@ class ARROW_EXPORT MemoryMappedFile : public ReadWriteFileInterface {
 
   Status Close() override;
 
+  bool closed() const override;
+
   Status Tell(int64_t* position) const override;
 
   Status Seek(int64_t position) override;
@@ -195,22 +199,32 @@ class ARROW_EXPORT MemoryMappedFile : public ReadWriteFileInterface {
   // Required by RandomAccessFile, copies memory into out. Not thread-safe
   Status Read(int64_t nbytes, int64_t* bytes_read, void* out) override;
 
-  // Zero copy read. Not thread-safe
+  // Zero copy read, moves position pointer. Not thread-safe
   Status Read(int64_t nbytes, std::shared_ptr<Buffer>* out) override;
 
+  // Zero-copy read, leaves position unchanged. Acquires a reader lock
+  // for the duration of slice creation (typically very short). Is thread-safe.
+  Status ReadAt(int64_t position, int64_t nbytes, std::shared_ptr<Buffer>* out) override;
+
+  // Raw copy of the memory at specified position. Thread-safe, but
+  // locks out other readers for the duration of memcpy. Prefer the
+  // zero copy method
   Status ReadAt(int64_t position, int64_t nbytes, int64_t* bytes_read,
                 void* out) override;
-
-  /// Default implementation is thread-safe
-  Status ReadAt(int64_t position, int64_t nbytes, std::shared_ptr<Buffer>* out) override;
 
   bool supports_zero_copy() const override;
 
   /// Write data at the current position in the file. Thread-safe
   Status Write(const void* data, int64_t nbytes) override;
 
+  /// Set the size of the map to new_size.
+  Status Resize(int64_t new_size);
+
   /// Write data at a particular position in the file. Thread-safe
   Status WriteAt(int64_t position, const void* data, int64_t nbytes) override;
+
+  // @return: the size in bytes of the memory source
+  Status GetSize(int64_t* size) const;
 
   // @return: the size in bytes of the memory source
   Status GetSize(int64_t* size) override;

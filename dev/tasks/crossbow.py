@@ -22,12 +22,17 @@ import re
 import sys
 import time
 import click
+import hashlib
+import gnupg
+import toolz
 import pygit2
 import github3
+import jira.client
 
 from io import StringIO
 from pathlib import Path
 from textwrap import dedent
+from datetime import datetime
 from jinja2 import Template, StrictUndefined
 from setuptools_scm import get_version
 from ruamel.yaml import YAML
@@ -36,12 +41,113 @@ from ruamel.yaml import YAML
 CWD = Path(__file__).parent.absolute()
 
 
+NEW_FEATURE = 'New Features and Improvements'
+BUGFIX = 'Bug Fixes'
+
+
+def md(template, *args, **kwargs):
+    """Wraps string.format with naive markdown escaping"""
+    def escape(s):
+        for char in ('*', '#', '_', '~', '`', '>'):
+            s = s.replace(char, '\\' + char)
+        return s
+    return template.format(*map(escape, args), **toolz.valmap(escape, kwargs))
+
+
+class JiraChangelog:
+
+    def __init__(self, version, username, password,
+                 server='https://issues.apache.org/jira'):
+        self.server = server
+        # clean version to the first numbers
+        self.version = '.'.join(version.split('.')[:3])
+        query = ("project=ARROW "
+                 "AND fixVersion='{0}' "
+                 "AND status = Resolved "
+                 "AND resolution in (Fixed, Done) "
+                 "ORDER BY issuetype DESC").format(self.version)
+        self.client = jira.client.JIRA({'server': server},
+                                       basic_auth=(username, password))
+        self.issues = self.client.search_issues(query, maxResults=9999)
+
+    def format_markdown(self):
+        out = StringIO()
+
+        issues_by_type = toolz.groupby(lambda i: i.fields.issuetype.name,
+                                       self.issues)
+        for typename, issues in sorted(issues_by_type.items()):
+            issues.sort(key=lambda x: x.key)
+
+            out.write(md('## {}\n\n', typename))
+            for issue in issues:
+                out.write(md('* {} - {}\n', issue.key, issue.fields.summary))
+            out.write('\n')
+
+        return out.getvalue()
+
+    def format_website(self):
+        # jira category => website category mapping
+        categories = {
+            'New Feature': 'feature',
+            'Improvement': 'feature',
+            'Wish': 'feature',
+            'Task': 'feature',
+            'Test': 'bug',
+            'Bug': 'bug',
+            'Sub-task': 'feature'
+        }
+        titles = {
+            'feature': 'New Features and Improvements',
+            'bugfix': 'Bug Fixes'
+        }
+
+        issues_by_category = toolz.groupby(
+            lambda issue: categories[issue.fields.issuetype.name],
+            self.issues
+        )
+
+        out = StringIO()
+
+        for category in ('feature', 'bug'):
+            title = titles[category]
+            issues = issues_by_category[category]
+            issues.sort(key=lambda x: x.key)
+
+            out.write(md('## {}\n\n', title))
+            for issue in issues:
+                link = md('[{0}]({1}/browse/{0})', issue.key, self.server)
+                out.write(md('* {} - {}\n', link, issue.fields.summary))
+            out.write('\n')
+
+        return out.getvalue()
+
+    def render(self, old_changelog, website=False):
+        old_changelog = old_changelog.splitlines()
+        if website:
+            new_changelog = self.format_website()
+        else:
+            new_changelog = self.format_markdown()
+
+        out = StringIO()
+
+        # Apache license header
+        out.write('\n'.join(old_changelog[:18]))
+
+        # Newly generated changelog
+        today = datetime.today().strftime('%d %B %Y')
+        out.write(md('\n\n# Apache Arrow {} ({})\n\n', self.version, today))
+        out.write(new_changelog)
+        out.write('\n'.join(old_changelog[19:]))
+
+        return out.getvalue().strip()
+
+
 class GitRemoteCallbacks(pygit2.RemoteCallbacks):
 
     def __init__(self, token):
         self.token = token
         self.attempts = 0
-        super(GitRemoteCallbacks, self).__init__()
+        super().__init__()
 
     def push_update_reference(self, refname, message):
         pass
@@ -85,7 +191,7 @@ class Repo:
             Commit: {head}
         ''')
         return tpl.format(
-            remote=self.remote.url,
+            remote=self.remote_url,
             branch=self.branch.branch_name,
             head=self.head
         )
@@ -117,6 +223,17 @@ class Repo:
     def remote(self):
         """Currently checked out branch's remote counterpart"""
         return self.repo.remotes[self.branch.upstream.remote_name]
+
+    @property
+    def remote_url(self):
+        """
+        Currently checked out branch's remote counterpart URL
+
+        If an SSH github url is set, it will be replaced by the https
+        equivalent.
+        """
+        return self.remote.url.replace(
+            'git@github.com:', 'https://github.com/')
 
     @property
     def email(self):
@@ -169,7 +286,7 @@ class Repo:
         return blob.data
 
     def _parse_github_user_repo(self):
-        m = re.match('.*\/([^\/]+)\/([^\/\.]+)(\.git)?$', self.remote.url)
+        m = re.match('.*\/([^\/]+)\/([^\/\.]+)(\.git)?$', self.remote_url)
         user, repo = m.group(1), m.group(2)
         return user, repo
 
@@ -287,7 +404,7 @@ class Target:
         return cls(head=str(repo.head.target),
                    email=repo.email,
                    branch=repo.branch.branch_name,
-                   remote=repo.remote.url,
+                   remote=repo.remote_url,
                    version=version)
 
 
@@ -313,8 +430,9 @@ class Task:
 
     def render_files(self, **extra_params):
         path = CWD / self.template
+        params = toolz.merge(self.params, extra_params)
         template = Template(path.read_text(), undefined=StrictUndefined)
-        rendered = template.render(task=self, **self.params, **extra_params)
+        rendered = template.render(task=self, **params)
         return {self.filename: rendered}
 
     @property
@@ -401,21 +519,55 @@ def crossbow(ctx, github_token, arrow_path, queue_path):
     ctx.obj['queue'] = Queue(Path(queue_path), github_token=github_token)
 
 
+@crossbow.command()
+@click.option('--changelog-path', '-c', type=click.Path(exists=True),
+              default=DEFAULT_ARROW_PATH / 'CHANGELOG.md',
+              help='Path of changelog to update')
+@click.option('--arrow-version', '-v', default=None,
+              help='Set target version explicitly')
+@click.option('--is-website', '-w', default=False)
+@click.option('--jira-username', '-u', default=None, help='JIRA username')
+@click.option('--jira-password', '-P', default=None, help='JIRA password')
+@click.option('--dry-run/--write', default=False,
+              help='Just display the new changelog, don\'t write it')
+@click.pass_context
+def changelog(ctx, changelog_path, arrow_version, is_website, jira_username,
+              jira_password, dry_run):
+    changelog_path = Path(changelog_path)
+    target = Target.from_repo(ctx.obj['arrow'])
+    version = arrow_version or target.version
+
+    changelog = JiraChangelog(version, username=jira_username,
+                              password=jira_password)
+    new_content = changelog.render(changelog_path.read_text(),
+                                   website=is_website)
+
+    if dry_run:
+        click.echo(new_content)
+    else:
+        changelog_path.write_text(new_content)
+        click.echo('New changelog successfully generated, see git diff for the'
+                   'changes')
+
+
 def load_tasks_from_config(config_path, task_names, group_names):
     with Path(config_path).open() as fp:
         config = yaml.load(fp)
 
-    valid_groups = set(config['groups'].keys())
+    groups = config['groups']
+    tasks = config['tasks']
+
+    valid_groups = set(groups.keys())
+    valid_tasks = set(tasks.keys())
+
     requested_groups = set(group_names)
     invalid_groups = requested_groups - valid_groups
     if invalid_groups:
         raise click.ClickException('Invalid group(s) {!r}. Must be one of {!r}'
                                    .format(invalid_groups, valid_groups))
 
-    valid_tasks = set(config['tasks'].keys())
-    requested_tasks = set(
-        sum([config['groups'][g] for g in group_names], list(task_names))
-    )
+    requested_tasks = [list(groups[name]) for name in group_names]
+    requested_tasks = set(sum(requested_tasks, list(task_names)))
     invalid_tasks = requested_tasks - valid_tasks
     if invalid_tasks:
         raise click.ClickException('Invalid task(s) {!r}. Must be one of {!r}'
@@ -433,13 +585,25 @@ def load_tasks_from_config(config_path, task_names, group_names):
 @click.option('--config-path', '-c',
               type=click.Path(exists=True), default=DEFAULT_CONFIG_PATH,
               help='Task configuration yml. Defaults to tasks.yml')
+@click.option('--arrow-version', '-v', default=None,
+              help='Set target version explicitly')
 @click.option('--dry-run/--push', default=False,
               help='Just display the rendered CI configurations without '
                    'submitting them')
 @click.pass_context
-def submit(ctx, task, group, job_prefix, config_path, dry_run):
+def submit(ctx, task, group, job_prefix, config_path, arrow_version, dry_run):
     queue, arrow = ctx.obj['queue'], ctx.obj['arrow']
     target = Target.from_repo(arrow)
+
+    # explicitly set arrow version
+    if arrow_version:
+        target.version = arrow_version
+
+    no_rc_version = re.sub(r'-rc\d+\Z', '', target.version)
+    params = {
+        'version': target.version,
+        'no_rc_version': no_rc_version,
+    }
 
     # task and group variables are lists, containing multiple values
     tasks = {}
@@ -447,8 +611,8 @@ def submit(ctx, task, group, job_prefix, config_path, dry_run):
     for name, task in task_configs.items():
         # replace version number and create task instance from configuration
         artifacts = task.pop('artifacts', None) or []  # because of yaml
-        artifacts = [fn.format(version=target.version) for fn in artifacts]
-        tasks[name] = Task(**task, artifacts=artifacts)
+        artifacts = [fn.format(**params) for fn in artifacts]
+        tasks[name] = Task(artifacts=artifacts, **task)
 
     # create job instance, doesn't mutate git data yet
     job = Job(target=target, tasks=tasks)
@@ -466,7 +630,7 @@ def submit(ctx, task, group, job_prefix, config_path, dry_run):
                 click.echo(content)
     else:
         queue.fetch()
-        queue.put(job)
+        queue.put(job, prefix=job_prefix)
         queue.push()
         yaml.dump(job, sys.stdout)
         click.echo('Pushed job identifier is: `{}`'.format(job.branch))
@@ -512,17 +676,46 @@ def status(ctx, job_name):
             click.echo(filename + click.style(statemsg, fg=COLORS[state]))
 
 
+def hashbytes(bytes, algoname):
+    """Hash `bytes` using the algorithm named `algoname`.
+
+    Parameters
+    ----------
+    bytes : bytes
+        The bytes to hash
+    algoname : str
+        The name of class in the hashlib standard library module
+
+    Returns
+    -------
+    str
+        Hexadecimal digest of `bytes` hashed using `algoname`
+    """
+    algo = getattr(hashlib, algoname)()
+    algo.update(bytes)
+    result = algo.hexdigest()
+    return result
+
+
 @crossbow.command()
 @click.argument('job-name', required=True)
-@click.option('--gpg-homedir', default=None,
+@click.option('-g', '--gpg-homedir', default=None,
+              type=click.Path(exists=True, file_okay=False, dir_okay=True),
               help=('Full pathname to directory containing the public and '
                     'private keyrings. Default is whatever GnuPG defaults to'))
-@click.option('--target-dir', default=DEFAULT_ARROW_PATH / 'packages',
+@click.option('-t', '--target-dir', default=DEFAULT_ARROW_PATH / 'packages',
+              type=click.Path(file_okay=False, dir_okay=True),
               help='Directory to download the build artifacts')
+@click.option('-a', '--algorithm',
+              default=['sha256', 'sha512'],
+              show_default=True,
+              type=click.Choice(sorted(hashlib.algorithms_guaranteed)),
+              multiple=True,
+              help=('Algorithm(s) used to generate checksums. Pass multiple '
+                    'algorithms by passing -a/--algorithm multiple times'))
 @click.pass_context
-def sign(ctx, job_name, gpg_homedir, target_dir):
+def sign(ctx, job_name, gpg_homedir, target_dir, algorithm):
     """Download and sign build artifacts from github releases"""
-    import gnupg
     gpg = gnupg.GPG(gnupghome=gpg_homedir)
 
     # fetch the queue repository
@@ -536,37 +729,67 @@ def sign(ctx, job_name, gpg_homedir, target_dir):
     target_dir.mkdir(parents=True, exist_ok=True)
     click.echo('Download {}\'s artifacts to {}'.format(job_name, target_dir))
 
-    tpl = '{:<10} {:>68}'
-    for task_name, task in sorted(job.tasks.items()):
+    tpl = '{:<10} {:>73}'
+
+    task_items = sorted(job.tasks.items())
+    ntasks = len(task_items)
+
+    for i, (task_name, task) in enumerate(task_items, start=1):
         assets = queue.github_assets(task)
         artifact_dir = target_dir / task_name
         artifact_dir.mkdir(exist_ok=True)
 
-        click.echo('\nDownloading and signing assets for task {}'
-                    .format(task_name))
-        click.echo('-' * 79)
+        basemsg = 'Downloading and signing assets for task {}'.format(
+            click.style(task_name, bold=True)
+        )
+        click.echo(
+            '\n{} {:>{size}}' .format(
+                basemsg,
+                click.style('{}/{}'.format(i, ntasks), bold=True),
+                size=89 - (len(basemsg) + 1) + 2 * len(
+                    click.style('', bold=True))
+            )
+        )
+        click.echo('-' * 89)
 
         for artifact in task.artifacts:
             try:
                 asset = assets[artifact]
             except KeyError:
-                msg = click.style('[{:>8}]'.format('MISSING'),
+                msg = click.style('[{:>13}]'.format('MISSING'),
                                   fg=COLORS['missing'])
                 click.echo(tpl.format(msg, artifact))
-                continue
+            else:
+                click.echo(click.style(artifact, bold=True))
 
-            # download artifact
-            artifact_path = artifact_dir / asset.name
-            asset.download(artifact_path)
+                # download artifact
+                artifact_path = artifact_dir / asset.name
+                asset.download(artifact_path)
 
-            # sign the artifact
-            with artifact_path.open('rb') as fp:
-                signature_path = Path(str(artifact_path) + '.sig')
-                gpg.sign_file(fp, detach=True, clearsign=False,
-                              output=str(signature_path))
+                # sign the artifact
+                signature_path = Path(str(artifact_path) + '.asc')
+                with artifact_path.open('rb') as fp:
+                    gpg.sign_file(fp, detach=True, clearsign=False,
+                                  binary=False,
+                                  output=str(signature_path))
 
-            msg = click.style('[{:>8}]'.format('SIGNED'), fg=COLORS['ok'])
-            click.echo(tpl.format(msg, asset.name))
+                # compute checksums for the artifact
+                artifact_bytes = artifact_path.read_bytes()
+                for algo in algorithm:
+                    suffix = '.{}'.format(algo)
+                    checksum_path = Path(str(artifact_path) + suffix)
+                    checksum = '{}  {}'.format(
+                        hashbytes(artifact_bytes, algo), artifact_path.name
+                    )
+                    checksum_path.write_text(checksum)
+                    msg = click.style(
+                        '[{:>13}]'.format('{} HASHED'.format(algo)),
+                        fg='blue'
+                    )
+                    click.echo(tpl.format(msg, checksum_path.name))
+
+                msg = click.style('[{:>13}]'.format('SIGNED'), fg=COLORS['ok'])
+                click.echo(tpl.format(msg, str(signature_path.name)))
 
 
 if __name__ == '__main__':

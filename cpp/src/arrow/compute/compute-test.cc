@@ -16,31 +16,33 @@
 // under the License.
 
 #include <cstdint>
-#include <cstdlib>
+#include <cstdio>
+#include <functional>
+#include <locale>
 #include <memory>
-#include <numeric>
-#include <sstream>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
 
 #include "arrow/array.h"
 #include "arrow/buffer.h"
-#include "arrow/builder.h"
-#include "arrow/compare.h"
-#include "arrow/ipc/test-common.h"
 #include "arrow/memory_pool.h"
-#include "arrow/pretty_print.h"
 #include "arrow/status.h"
+#include "arrow/table.h"
 #include "arrow/test-common.h"
 #include "arrow/test-util.h"
 #include "arrow/type.h"
 #include "arrow/type_traits.h"
+#include "arrow/util/decimal.h"
 
 #include "arrow/compute/context.h"
 #include "arrow/compute/kernel.h"
+#include "arrow/compute/kernels/boolean.h"
 #include "arrow/compute/kernels/cast.h"
 #include "arrow/compute/kernels/hash.h"
+#include "arrow/compute/kernels/util-internal.h"
 
 using std::shared_ptr;
 using std::vector;
@@ -181,12 +183,6 @@ TEST_F(TestCast, ToIntUpcast) {
   vector<int16_t> e3 = {0, 100, 200, 255, 0};
   CheckCase<UInt8Type, uint8_t, Int16Type, int16_t>(uint8(), v3, is_valid, int16(), e3,
                                                     options);
-
-  // floating point to integer
-  vector<double> v4 = {1.5, 0, 0.5, -1.5, 5.5};
-  vector<int32_t> e4 = {1, 0, 0, -1, 5};
-  CheckCase<DoubleType, double, Int32Type, int32_t>(float64(), v4, is_valid, int32(), e4,
-                                                    options);
 }
 
 TEST_F(TestCast, OverflowInNullSlot) {
@@ -201,8 +197,7 @@ TEST_F(TestCast, OverflowInNullSlot) {
   shared_ptr<Array> expected;
   ArrayFromVector<Int16Type, int16_t>(int16(), is_valid, e11, &expected);
 
-  auto buf = std::make_shared<Buffer>(reinterpret_cast<const uint8_t*>(v11.data()),
-                                      static_cast<int64_t>(v11.size()));
+  auto buf = Buffer::Wrap(v11.data(), v11.size());
   Int32Array tmp11(5, buf, expected->null_bitmap(), -1);
 
   CheckPass(tmp11, *expected, int16(), options);
@@ -215,32 +210,32 @@ TEST_F(TestCast, ToIntDowncastSafe) {
   vector<bool> is_valid = {true, false, true, true, true};
 
   // int16 to uint8, no overflow/underrun
-  vector<int16_t> v5 = {0, 100, 200, 1, 2};
-  vector<uint8_t> e5 = {0, 100, 200, 1, 2};
-  CheckCase<Int16Type, int16_t, UInt8Type, uint8_t>(int16(), v5, is_valid, uint8(), e5,
+  vector<int16_t> v1 = {0, 100, 200, 1, 2};
+  vector<uint8_t> e1 = {0, 100, 200, 1, 2};
+  CheckCase<Int16Type, int16_t, UInt8Type, uint8_t>(int16(), v1, is_valid, uint8(), e1,
                                                     options);
 
   // int16 to uint8, with overflow
-  vector<int16_t> v6 = {0, 100, 256, 0, 0};
-  CheckFails<Int16Type>(int16(), v6, is_valid, uint8(), options);
+  vector<int16_t> v2 = {0, 100, 256, 0, 0};
+  CheckFails<Int16Type>(int16(), v2, is_valid, uint8(), options);
 
   // underflow
-  vector<int16_t> v7 = {0, 100, -1, 0, 0};
-  CheckFails<Int16Type>(int16(), v7, is_valid, uint8(), options);
+  vector<int16_t> v3 = {0, 100, -1, 0, 0};
+  CheckFails<Int16Type>(int16(), v3, is_valid, uint8(), options);
 
   // int32 to int16, no overflow
-  vector<int32_t> v8 = {0, 1000, 2000, 1, 2};
-  vector<int16_t> e8 = {0, 1000, 2000, 1, 2};
-  CheckCase<Int32Type, int32_t, Int16Type, int16_t>(int32(), v8, is_valid, int16(), e8,
+  vector<int32_t> v4 = {0, 1000, 2000, 1, 2};
+  vector<int16_t> e4 = {0, 1000, 2000, 1, 2};
+  CheckCase<Int32Type, int32_t, Int16Type, int16_t>(int32(), v4, is_valid, int16(), e4,
                                                     options);
 
   // int32 to int16, overflow
-  vector<int32_t> v9 = {0, 1000, 2000, 70000, 0};
-  CheckFails<Int32Type>(int32(), v9, is_valid, int16(), options);
+  vector<int32_t> v5 = {0, 1000, 2000, 70000, 0};
+  CheckFails<Int32Type>(int32(), v5, is_valid, int16(), options);
 
   // underflow
-  vector<int32_t> v10 = {0, 1000, 2000, -70000, 0};
-  CheckFails<Int32Type>(int32(), v9, is_valid, int16(), options);
+  vector<int32_t> v6 = {0, 1000, 2000, -70000, 0};
+  CheckFails<Int32Type>(int32(), v6, is_valid, int16(), options);
 }
 
 TEST_F(TestCast, ToIntDowncastUnsafe) {
@@ -250,41 +245,101 @@ TEST_F(TestCast, ToIntDowncastUnsafe) {
   vector<bool> is_valid = {true, false, true, true, true};
 
   // int16 to uint8, no overflow/underrun
-  vector<int16_t> v5 = {0, 100, 200, 1, 2};
-  vector<uint8_t> e5 = {0, 100, 200, 1, 2};
-  CheckCase<Int16Type, int16_t, UInt8Type, uint8_t>(int16(), v5, is_valid, uint8(), e5,
+  vector<int16_t> v1 = {0, 100, 200, 1, 2};
+  vector<uint8_t> e1 = {0, 100, 200, 1, 2};
+  CheckCase<Int16Type, int16_t, UInt8Type, uint8_t>(int16(), v1, is_valid, uint8(), e1,
                                                     options);
 
   // int16 to uint8, with overflow
-  vector<int16_t> v6 = {0, 100, 256, 0, 0};
-  vector<uint8_t> e6 = {0, 100, 0, 0, 0};
-  CheckCase<Int16Type, int16_t, UInt8Type, uint8_t>(int16(), v6, is_valid, uint8(), e6,
+  vector<int16_t> v2 = {0, 100, 256, 0, 0};
+  vector<uint8_t> e2 = {0, 100, 0, 0, 0};
+  CheckCase<Int16Type, int16_t, UInt8Type, uint8_t>(int16(), v2, is_valid, uint8(), e2,
                                                     options);
 
   // underflow
-  vector<int16_t> v7 = {0, 100, -1, 0, 0};
-  vector<uint8_t> e7 = {0, 100, 255, 0, 0};
-  CheckCase<Int16Type, int16_t, UInt8Type, uint8_t>(int16(), v7, is_valid, uint8(), e7,
+  vector<int16_t> v3 = {0, 100, -1, 0, 0};
+  vector<uint8_t> e3 = {0, 100, 255, 0, 0};
+  CheckCase<Int16Type, int16_t, UInt8Type, uint8_t>(int16(), v3, is_valid, uint8(), e3,
                                                     options);
 
   // int32 to int16, no overflow
-  vector<int32_t> v8 = {0, 1000, 2000, 1, 2};
-  vector<int16_t> e8 = {0, 1000, 2000, 1, 2};
-  CheckCase<Int32Type, int32_t, Int16Type, int16_t>(int32(), v8, is_valid, int16(), e8,
+  vector<int32_t> v4 = {0, 1000, 2000, 1, 2};
+  vector<int16_t> e4 = {0, 1000, 2000, 1, 2};
+  CheckCase<Int32Type, int32_t, Int16Type, int16_t>(int32(), v4, is_valid, int16(), e4,
                                                     options);
 
   // int32 to int16, overflow
   // TODO(wesm): do we want to allow this? we could set to null
-  vector<int32_t> v9 = {0, 1000, 2000, 70000, 0};
-  vector<int16_t> e9 = {0, 1000, 2000, 4464, 0};
-  CheckCase<Int32Type, int32_t, Int16Type, int16_t>(int32(), v9, is_valid, int16(), e9,
+  vector<int32_t> v5 = {0, 1000, 2000, 70000, 0};
+  vector<int16_t> e5 = {0, 1000, 2000, 4464, 0};
+  CheckCase<Int32Type, int32_t, Int16Type, int16_t>(int32(), v5, is_valid, int16(), e5,
                                                     options);
 
   // underflow
   // TODO(wesm): do we want to allow this? we could set overflow to null
-  vector<int32_t> v10 = {0, 1000, 2000, -70000, 0};
-  vector<int16_t> e10 = {0, 1000, 2000, -4464, 0};
-  CheckCase<Int32Type, int32_t, Int16Type, int16_t>(int32(), v10, is_valid, int16(), e10,
+  vector<int32_t> v6 = {0, 1000, 2000, -70000, 0};
+  vector<int16_t> e6 = {0, 1000, 2000, -4464, 0};
+  CheckCase<Int32Type, int32_t, Int16Type, int16_t>(int32(), v6, is_valid, int16(), e6,
+                                                    options);
+}
+
+TEST_F(TestCast, FloatingPointToInt) {
+  // which means allow_float_truncate == false
+  auto options = CastOptions::Safe();
+
+  vector<bool> is_valid = {true, false, true, true, true};
+  vector<bool> all_valid = {true, true, true, true, true};
+
+  // float32 to int32 no truncation
+  vector<float> v1 = {1.0, 0, 0.0, -1.0, 5.0};
+  vector<int32_t> e1 = {1, 0, 0, -1, 5};
+  CheckCase<FloatType, float, Int32Type, int32_t>(float32(), v1, is_valid, int32(), e1,
+                                                  options);
+  CheckCase<FloatType, float, Int32Type, int32_t>(float32(), v1, all_valid, int32(), e1,
+                                                  options);
+
+  // float64 to int32 no truncation
+  vector<double> v2 = {1.0, 0, 0.0, -1.0, 5.0};
+  vector<int32_t> e2 = {1, 0, 0, -1, 5};
+  CheckCase<DoubleType, double, Int32Type, int32_t>(float64(), v2, is_valid, int32(), e2,
+                                                    options);
+  CheckCase<DoubleType, double, Int32Type, int32_t>(float64(), v2, all_valid, int32(), e2,
+                                                    options);
+
+  // float64 to int64 no truncation
+  vector<double> v3 = {1.0, 0, 0.0, -1.0, 5.0};
+  vector<int64_t> e3 = {1, 0, 0, -1, 5};
+  CheckCase<DoubleType, double, Int64Type, int64_t>(float64(), v3, is_valid, int64(), e3,
+                                                    options);
+  CheckCase<DoubleType, double, Int64Type, int64_t>(float64(), v3, all_valid, int64(), e3,
+                                                    options);
+
+  // float64 to int32 truncate
+  vector<double> v4 = {1.5, 0, 0.5, -1.5, 5.5};
+  vector<int32_t> e4 = {1, 0, 0, -1, 5};
+
+  options.allow_float_truncate = false;
+  CheckFails<DoubleType>(float64(), v4, is_valid, int32(), options);
+  CheckFails<DoubleType>(float64(), v4, all_valid, int32(), options);
+
+  options.allow_float_truncate = true;
+  CheckCase<DoubleType, double, Int32Type, int32_t>(float64(), v4, is_valid, int32(), e4,
+                                                    options);
+  CheckCase<DoubleType, double, Int32Type, int32_t>(float64(), v4, all_valid, int32(), e4,
+                                                    options);
+
+  // float64 to int64 truncate
+  vector<double> v5 = {1.5, 0, 0.5, -1.5, 5.5};
+  vector<int64_t> e5 = {1, 0, 0, -1, 5};
+
+  options.allow_float_truncate = false;
+  CheckFails<DoubleType>(float64(), v5, is_valid, int64(), options);
+  CheckFails<DoubleType>(float64(), v5, all_valid, int64(), options);
+
+  options.allow_float_truncate = true;
+  CheckCase<DoubleType, double, Int64Type, int64_t>(float64(), v5, is_valid, int64(), e5,
+                                                    options);
+  CheckCase<DoubleType, double, Int64Type, int64_t>(float64(), v5, all_valid, int64(), e5,
                                                     options);
 }
 
@@ -769,6 +824,123 @@ TEST_F(TestCast, OffsetOutputBuffer) {
                                                                 int16(), e3);
 }
 
+TEST_F(TestCast, StringToBoolean) {
+  CastOptions options;
+
+  vector<bool> is_valid = {true, false, true, true, true};
+
+  vector<std::string> v1 = {"False", "true", "true", "True", "false"};
+  vector<std::string> v2 = {"0", "1", "1", "1", "0"};
+  vector<bool> e = {false, true, true, true, false};
+  CheckCase<StringType, std::string, BooleanType, bool>(utf8(), v1, is_valid, boolean(),
+                                                        e, options);
+  CheckCase<StringType, std::string, BooleanType, bool>(utf8(), v2, is_valid, boolean(),
+                                                        e, options);
+}
+
+TEST_F(TestCast, StringToBooleanErrors) {
+  CastOptions options;
+
+  vector<bool> is_valid = {true};
+
+  CheckFails<StringType, std::string>(utf8(), {"false "}, is_valid, boolean(), options);
+  CheckFails<StringType, std::string>(utf8(), {"T"}, is_valid, boolean(), options);
+}
+
+TEST_F(TestCast, StringToNumber) {
+  CastOptions options;
+
+  vector<bool> is_valid = {true, false, true, true, true};
+
+  // string to int
+  vector<std::string> v_int = {"0", "1", "127", "-1", "0"};
+  vector<int8_t> e_int8 = {0, 1, 127, -1, 0};
+  vector<int16_t> e_int16 = {0, 1, 127, -1, 0};
+  vector<int32_t> e_int32 = {0, 1, 127, -1, 0};
+  vector<int64_t> e_int64 = {0, 1, 127, -1, 0};
+  CheckCase<StringType, std::string, Int8Type, int8_t>(utf8(), v_int, is_valid, int8(),
+                                                       e_int8, options);
+  CheckCase<StringType, std::string, Int16Type, int16_t>(utf8(), v_int, is_valid, int16(),
+                                                         e_int16, options);
+  CheckCase<StringType, std::string, Int32Type, int32_t>(utf8(), v_int, is_valid, int32(),
+                                                         e_int32, options);
+  CheckCase<StringType, std::string, Int64Type, int64_t>(utf8(), v_int, is_valid, int64(),
+                                                         e_int64, options);
+
+  v_int = {"2147483647", "0", "-2147483648", "0", "0"};
+  e_int32 = {2147483647, 0, -2147483648LL, 0, 0};
+  CheckCase<StringType, std::string, Int32Type, int32_t>(utf8(), v_int, is_valid, int32(),
+                                                         e_int32, options);
+  v_int = {"9223372036854775807", "0", "-9223372036854775808", "0", "0"};
+  e_int64 = {9223372036854775807LL, 0, (-9223372036854775807LL - 1), 0, 0};
+  CheckCase<StringType, std::string, Int64Type, int64_t>(utf8(), v_int, is_valid, int64(),
+                                                         e_int64, options);
+
+  // string to uint
+  vector<std::string> v_uint = {"0", "1", "127", "255", "0"};
+  vector<uint8_t> e_uint8 = {0, 1, 127, 255, 0};
+  vector<uint16_t> e_uint16 = {0, 1, 127, 255, 0};
+  vector<uint32_t> e_uint32 = {0, 1, 127, 255, 0};
+  vector<uint64_t> e_uint64 = {0, 1, 127, 255, 0};
+  CheckCase<StringType, std::string, UInt8Type, uint8_t>(utf8(), v_uint, is_valid,
+                                                         uint8(), e_uint8, options);
+  CheckCase<StringType, std::string, UInt16Type, uint16_t>(utf8(), v_uint, is_valid,
+                                                           uint16(), e_uint16, options);
+  CheckCase<StringType, std::string, UInt32Type, uint32_t>(utf8(), v_uint, is_valid,
+                                                           uint32(), e_uint32, options);
+  CheckCase<StringType, std::string, UInt64Type, uint64_t>(utf8(), v_uint, is_valid,
+                                                           uint64(), e_uint64, options);
+
+  v_uint = {"4294967295", "0", "0", "0", "0"};
+  e_uint32 = {4294967295, 0, 0, 0, 0};
+  CheckCase<StringType, std::string, UInt32Type, uint32_t>(utf8(), v_uint, is_valid,
+                                                           uint32(), e_uint32, options);
+  v_uint = {"18446744073709551615", "0", "0", "0", "0"};
+  e_uint64 = {18446744073709551615ULL, 0, 0, 0, 0};
+  CheckCase<StringType, std::string, UInt64Type, uint64_t>(utf8(), v_uint, is_valid,
+                                                           uint64(), e_uint64, options);
+
+  // string to float
+  vector<std::string> v_float = {"0.1", "1.2", "127.3", "200.4", "0.5"};
+  vector<float> e_float = {0.1f, 1.2f, 127.3f, 200.4f, 0.5f};
+  vector<double> e_double = {0.1, 1.2, 127.3, 200.4, 0.5};
+  CheckCase<StringType, std::string, FloatType, float>(utf8(), v_float, is_valid,
+                                                       float32(), e_float, options);
+  CheckCase<StringType, std::string, DoubleType, double>(utf8(), v_float, is_valid,
+                                                         float64(), e_double, options);
+
+  // Test that casting is locale-independent
+  auto global_locale = std::locale();
+  try {
+    // French locale uses the comma as decimal point
+    std::locale::global(std::locale("fr_FR.UTF-8"));
+  } catch (std::runtime_error) {
+    // Locale unavailable, ignore
+  }
+  CheckCase<StringType, std::string, FloatType, float>(utf8(), v_float, is_valid,
+                                                       float32(), e_float, options);
+  CheckCase<StringType, std::string, DoubleType, double>(utf8(), v_float, is_valid,
+                                                         float64(), e_double, options);
+  std::locale::global(global_locale);
+}
+
+TEST_F(TestCast, StringToNumberErrors) {
+  CastOptions options;
+
+  vector<bool> is_valid = {true};
+
+  CheckFails<StringType, std::string>(utf8(), {"z"}, is_valid, int8(), options);
+  CheckFails<StringType, std::string>(utf8(), {"12 z"}, is_valid, int8(), options);
+  CheckFails<StringType, std::string>(utf8(), {"128"}, is_valid, int8(), options);
+  CheckFails<StringType, std::string>(utf8(), {"-129"}, is_valid, int8(), options);
+  CheckFails<StringType, std::string>(utf8(), {"0.5"}, is_valid, int8(), options);
+
+  CheckFails<StringType, std::string>(utf8(), {"256"}, is_valid, uint8(), options);
+  CheckFails<StringType, std::string>(utf8(), {"-1"}, is_valid, uint8(), options);
+
+  CheckFails<StringType, std::string>(utf8(), {"z"}, is_valid, float32(), options);
+}
+
 template <typename TestType>
 class TestDictionaryCast : public TestCast {};
 
@@ -798,10 +970,8 @@ TEST_F(TestCast, DictToNonDictNoNulls) {
   // Explicitly construct with nullptr for the null_bitmap_data
   std::vector<int32_t> i1 = {1, 0, 1};
   std::vector<int32_t> i2 = {2, 1, 0, 1};
-  auto c1 = std::make_shared<NumericArray<Int32Type>>(
-      3, arrow::test::GetBufferFromVector<int32_t>(i1));
-  auto c2 = std::make_shared<NumericArray<Int32Type>>(
-      4, arrow::test::GetBufferFromVector<int32_t>(i2));
+  auto c1 = std::make_shared<NumericArray<Int32Type>>(3, Buffer::Wrap(i1));
+  auto c2 = std::make_shared<NumericArray<Int32Type>>(4, Buffer::Wrap(i2));
 
   ArrayVector dict_arrays = {std::make_shared<DictionaryArray>(dict_type, c1),
                              std::make_shared<DictionaryArray>(dict_type, c2)};
@@ -862,18 +1032,14 @@ TEST_F(TestCast, ListToList) {
   ASSERT_OK(
       ListArray::FromArrays(*offsets, *float64_plain_array, pool_, &float64_list_array));
 
-  this->CheckPass(*int32_list_array, *int64_list_array, int64_list_array->type(),
-                  options);
-  this->CheckPass(*int32_list_array, *float64_list_array, float64_list_array->type(),
-                  options);
-  this->CheckPass(*int64_list_array, *int32_list_array, int32_list_array->type(),
-                  options);
-  this->CheckPass(*int64_list_array, *float64_list_array, float64_list_array->type(),
-                  options);
-  this->CheckPass(*float64_list_array, *int32_list_array, int32_list_array->type(),
-                  options);
-  this->CheckPass(*float64_list_array, *int64_list_array, int64_list_array->type(),
-                  options);
+  CheckPass(*int32_list_array, *int64_list_array, int64_list_array->type(), options);
+  CheckPass(*int32_list_array, *float64_list_array, float64_list_array->type(), options);
+  CheckPass(*int64_list_array, *int32_list_array, int32_list_array->type(), options);
+  CheckPass(*int64_list_array, *float64_list_array, float64_list_array->type(), options);
+
+  options.allow_float_truncate = true;
+  CheckPass(*float64_list_array, *int32_list_array, int32_list_array->type(), options);
+  CheckPass(*float64_list_array, *int64_list_array, int64_list_array->type(), options);
 }
 
 // ----------------------------------------------------------------------
@@ -1034,24 +1200,29 @@ TEST_F(TestHashKernel, DictEncodeBinary) {
 }
 
 TEST_F(TestHashKernel, BinaryResizeTable) {
-  const int64_t kTotalValues = 10000;
-  const int64_t kRepeats = 10;
+  const int32_t kTotalValues = 10000;
+#if !defined(ARROW_VALGRIND)
+  const int32_t kRepeats = 10;
+#else
+  // Mitigate Valgrind's slowness
+  const int32_t kRepeats = 3;
+#endif
 
   vector<std::string> values;
   vector<std::string> uniques;
   vector<int32_t> indices;
-  for (int64_t i = 0; i < kTotalValues * kRepeats; i++) {
-    int64_t index = i % kTotalValues;
-    std::stringstream ss;
-    ss << "test" << index;
-    std::string val = ss.str();
+  char buf[20] = "test";
 
-    values.push_back(val);
+  for (int32_t i = 0; i < kTotalValues * kRepeats; i++) {
+    int32_t index = i % kTotalValues;
+
+    ASSERT_GE(snprintf(buf + 4, sizeof(buf) - 4, "%d", index), 0);
+    values.emplace_back(buf);
 
     if (i < kTotalValues) {
-      uniques.push_back(val);
+      uniques.push_back(values.back());
     }
-    indices.push_back(static_cast<int32_t>(i % kTotalValues));
+    indices.push_back(index);
   }
 
   CheckUnique<BinaryType, std::string>(&this->ctx_, binary(), values, {}, uniques, {});
@@ -1076,24 +1247,30 @@ TEST_F(TestHashKernel, DictEncodeFixedSizeBinary) {
 }
 
 TEST_F(TestHashKernel, FixedSizeBinaryResizeTable) {
-  const int64_t kTotalValues = 10000;
-  const int64_t kRepeats = 10;
+  const int32_t kTotalValues = 10000;
+#if !defined(ARROW_VALGRIND)
+  const int32_t kRepeats = 10;
+#else
+  // Mitigate Valgrind's slowness
+  const int32_t kRepeats = 3;
+#endif
 
   vector<std::string> values;
   vector<std::string> uniques;
   vector<int32_t> indices;
-  for (int64_t i = 0; i < kTotalValues * kRepeats; i++) {
-    int64_t index = i % kTotalValues;
-    std::stringstream ss;
-    ss << "test" << static_cast<char>(index / 128) << static_cast<char>(index % 128);
-    std::string val = ss.str();
+  char buf[7] = "test..";
 
-    values.push_back(val);
+  for (int32_t i = 0; i < kTotalValues * kRepeats; i++) {
+    int32_t index = i % kTotalValues;
+
+    buf[4] = static_cast<char>(index / 128);
+    buf[5] = static_cast<char>(index % 128);
+    values.emplace_back(buf, 6);
 
     if (i < kTotalValues) {
-      uniques.push_back(val);
+      uniques.push_back(values.back());
     }
-    indices.push_back(static_cast<int32_t>(i % kTotalValues));
+    indices.push_back(index);
   }
 
   auto type = fixed_size_binary(6);
@@ -1154,6 +1331,153 @@ TEST_F(TestHashKernel, ChunkedArrayInvoke) {
   ASSERT_EQ(Datum::CHUNKED_ARRAY, encoded_out.kind());
 
   ASSERT_TRUE(encoded_out.chunked_array()->Equals(*dict_carr));
+}
+
+using BinaryKernelFunc =
+    std::function<Status(FunctionContext*, const Datum&, const Datum&, Datum* out)>;
+
+class TestBooleanKernel : public ComputeFixture, public TestBase {
+ public:
+  void TestArrayBinary(const BinaryKernelFunc& kernel, const std::shared_ptr<Array>& left,
+                       const std::shared_ptr<Array>& right,
+                       const std::shared_ptr<Array>& expected) {
+    Datum result;
+    ASSERT_OK(kernel(&this->ctx_, Datum(left), Datum(right), &result));
+    ASSERT_EQ(Datum::ARRAY, result.kind());
+    std::shared_ptr<Array> result_array = result.make_array();
+    ASSERT_TRUE(result_array->Equals(expected));
+  }
+
+  void TestChunkedArrayBinary(const BinaryKernelFunc& kernel,
+                              const std::shared_ptr<ChunkedArray>& left,
+                              const std::shared_ptr<ChunkedArray>& right,
+                              const std::shared_ptr<ChunkedArray>& expected) {
+    Datum result;
+    std::shared_ptr<Array> result_array;
+    ASSERT_OK(kernel(&this->ctx_, Datum(left), Datum(right), &result));
+    ASSERT_EQ(Datum::CHUNKED_ARRAY, result.kind());
+    std::shared_ptr<ChunkedArray> result_ca = result.chunked_array();
+    ASSERT_TRUE(result_ca->Equals(expected));
+  }
+
+  void TestBinaryKernel(const BinaryKernelFunc& kernel, const std::vector<bool>& values1,
+                        const std::vector<bool>& values2,
+                        const std::vector<bool>& values3,
+                        const std::vector<bool>& values3_nulls) {
+    auto type = boolean();
+    auto a1 = _MakeArray<BooleanType, bool>(type, values1, {});
+    auto a2 = _MakeArray<BooleanType, bool>(type, values2, {});
+    auto a3 = _MakeArray<BooleanType, bool>(type, values3, {});
+    auto a1_nulls = _MakeArray<BooleanType, bool>(type, values1, values1);
+    auto a2_nulls = _MakeArray<BooleanType, bool>(type, values2, values2);
+    auto a3_nulls = _MakeArray<BooleanType, bool>(type, values3, values3_nulls);
+
+    TestArrayBinary(kernel, a1, a2, a3);
+    TestArrayBinary(kernel, a1_nulls, a2_nulls, a3_nulls);
+    TestArrayBinary(kernel, a1->Slice(1), a2->Slice(1), a3->Slice(1));
+    TestArrayBinary(kernel, a1_nulls->Slice(1), a2_nulls->Slice(1), a3_nulls->Slice(1));
+
+    // ChunkedArray
+    std::vector<std::shared_ptr<Array>> ca1_arrs = {a1, a1->Slice(1)};
+    auto ca1 = std::make_shared<ChunkedArray>(ca1_arrs);
+    std::vector<std::shared_ptr<Array>> ca2_arrs = {a2, a2->Slice(1)};
+    auto ca2 = std::make_shared<ChunkedArray>(ca2_arrs);
+    std::vector<std::shared_ptr<Array>> ca3_arrs = {a3, a3->Slice(1)};
+    auto ca3 = std::make_shared<ChunkedArray>(ca3_arrs);
+    TestChunkedArrayBinary(kernel, ca1, ca2, ca3);
+
+    // ChunkedArray with different chunks
+    std::vector<std::shared_ptr<Array>> ca4_arrs = {a1->Slice(0, 1), a1->Slice(1),
+                                                    a1->Slice(1, 1), a1->Slice(2)};
+    auto ca4 = std::make_shared<ChunkedArray>(ca4_arrs);
+    TestChunkedArrayBinary(kernel, ca4, ca2, ca3);
+  }
+};
+
+TEST_F(TestBooleanKernel, Invert) {
+  vector<bool> values1 = {true, false, true};
+  vector<bool> values2 = {false, true, false};
+
+  auto type = boolean();
+  auto a1 = _MakeArray<BooleanType, bool>(type, values1, {});
+  auto a2 = _MakeArray<BooleanType, bool>(type, values2, {});
+
+  // Plain array
+  Datum result;
+  ASSERT_OK(Invert(&this->ctx_, Datum(a1), &result));
+  ASSERT_EQ(Datum::ARRAY, result.kind());
+  std::shared_ptr<Array> result_array = result.make_array();
+  ASSERT_TRUE(result_array->Equals(a2));
+
+  // Array with offset
+  ASSERT_OK(Invert(&this->ctx_, Datum(a1->Slice(1)), &result));
+  ASSERT_EQ(Datum::ARRAY, result.kind());
+  result_array = result.make_array();
+  ASSERT_TRUE(result_array->Equals(a2->Slice(1)));
+
+  // ChunkedArray
+  std::vector<std::shared_ptr<Array>> ca1_arrs = {a1, a1->Slice(1)};
+  auto ca1 = std::make_shared<ChunkedArray>(ca1_arrs);
+  std::vector<std::shared_ptr<Array>> ca2_arrs = {a2, a2->Slice(1)};
+  auto ca2 = std::make_shared<ChunkedArray>(ca2_arrs);
+  ASSERT_OK(Invert(&this->ctx_, Datum(ca1), &result));
+  ASSERT_EQ(Datum::CHUNKED_ARRAY, result.kind());
+  std::shared_ptr<ChunkedArray> result_ca = result.chunked_array();
+  ASSERT_TRUE(result_ca->Equals(ca2));
+}
+
+TEST_F(TestBooleanKernel, And) {
+  vector<bool> values1 = {true, false, true, false, true, true};
+  vector<bool> values2 = {true, true, false, false, true, false};
+  vector<bool> values3 = {true, false, false, false, true, false};
+  TestBinaryKernel(And, values1, values2, values3, values3);
+}
+
+TEST_F(TestBooleanKernel, Or) {
+  vector<bool> values1 = {true, false, true, false, true, true};
+  vector<bool> values2 = {true, true, false, false, true, false};
+  vector<bool> values3 = {true, true, true, false, true, true};
+  vector<bool> values3_nulls = {true, false, false, false, true, false};
+  TestBinaryKernel(Or, values1, values2, values3, values3_nulls);
+}
+
+TEST_F(TestBooleanKernel, Xor) {
+  vector<bool> values1 = {true, false, true, false, true, true};
+  vector<bool> values2 = {true, true, false, false, true, false};
+  vector<bool> values3 = {false, true, true, false, false, true};
+  vector<bool> values3_nulls = {true, false, false, false, true, false};
+  TestBinaryKernel(Xor, values1, values2, values3, values3_nulls);
+}
+
+class TestInvokeBinaryKernel : public ComputeFixture, public TestBase {};
+
+class DummyBinaryKernel : public BinaryKernel {
+  Status Call(FunctionContext* ctx, const Datum& left, const Datum& right,
+              Datum* out) override {
+    return Status::OK();
+  }
+};
+
+TEST_F(TestInvokeBinaryKernel, Exceptions) {
+  DummyBinaryKernel kernel;
+  std::vector<Datum> outputs;
+  std::shared_ptr<Table> table;
+  vector<bool> values1 = {true, false, true};
+  vector<bool> values2 = {false, true, false};
+
+  auto type = boolean();
+  auto a1 = _MakeArray<BooleanType, bool>(type, values1, {});
+  auto a2 = _MakeArray<BooleanType, bool>(type, values2, {});
+
+  // Left is not an array-like
+  ASSERT_RAISES(Invalid, detail::InvokeBinaryArrayKernel(
+                             &this->ctx_, &kernel, Datum(table), Datum(a2), &outputs));
+  // Right is not an array-like
+  ASSERT_RAISES(Invalid, detail::InvokeBinaryArrayKernel(&this->ctx_, &kernel, Datum(a1),
+                                                         Datum(table), &outputs));
+  // Different sized inputs
+  ASSERT_RAISES(Invalid, detail::InvokeBinaryArrayKernel(&this->ctx_, &kernel, Datum(a1),
+                                                         Datum(a1->Slice(1)), &outputs));
 }
 
 }  // namespace compute

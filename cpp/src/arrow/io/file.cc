@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "arrow/io/windows_compatibility.h"
+#include "arrow/util/windows_compatibility.h"  // IWYU pragma: keep
 
 // sys/mman.h not present in Visual Studio or Cygwin
 #ifdef _WIN32
@@ -27,16 +27,17 @@
 #undef Free
 #else
 #include <sys/mman.h>
+#include <unistd.h>  // IWYU pragma: keep
 #endif
-
-#include <string.h>
 
 #include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <sstream>
+#include <string>
 
 // ----------------------------------------------------------------------
 // Other Arrow includes
@@ -61,12 +62,12 @@ class OSFile {
 
   // Note: only one of the Open* methods below may be called on a given instance
 
-  Status OpenWriteable(const std::string& path, bool truncate, bool append,
-                       bool write_only) {
+  Status OpenWritable(const std::string& path, bool truncate, bool append,
+                      bool write_only) {
     RETURN_NOT_OK(SetFileName(path));
 
     RETURN_NOT_OK(
-        internal::FileOpenWriteable(file_name_, write_only, truncate, append, &fd_));
+        internal::FileOpenWritable(file_name_, write_only, truncate, append, &fd_));
     is_open_ = true;
     mode_ = write_only ? FileMode::WRITE : FileMode::READWRITE;
 
@@ -78,9 +79,9 @@ class OSFile {
     return Status::OK();
   }
 
-  // This is different from OpenWriteable(string, ...) in that it doesn't
+  // This is different from OpenWritable(string, ...) in that it doesn't
   // truncate nor mandate a seekable file
-  Status OpenWriteable(int fd) {
+  Status OpenWritable(int fd) {
     if (!internal::FileGetSize(fd, &size_).ok()) {
       // Non-seekable file
       size_ = -1;
@@ -199,6 +200,7 @@ class ReadableFile::ReadableFileImpl : public OSFile {
     RETURN_NOT_OK(Read(nbytes, &bytes_read, buffer->mutable_data()));
     if (bytes_read < nbytes) {
       RETURN_NOT_OK(buffer->Resize(bytes_read));
+      buffer->ZeroPadding();
     }
     *out = buffer;
     return Status::OK();
@@ -212,6 +214,7 @@ class ReadableFile::ReadableFileImpl : public OSFile {
     RETURN_NOT_OK(ReadAt(position, nbytes, &bytes_read, buffer->mutable_data()));
     if (bytes_read < nbytes) {
       RETURN_NOT_OK(buffer->Resize(bytes_read));
+      buffer->ZeroPadding();
     }
     *out = buffer;
     return Status::OK();
@@ -246,6 +249,8 @@ Status ReadableFile::Open(int fd, std::shared_ptr<ReadableFile>* file) {
 }
 
 Status ReadableFile::Close() { return impl_->Close(); }
+
+bool ReadableFile::closed() const { return !impl_->is_open(); }
 
 Status ReadableFile::Tell(int64_t* pos) const { return impl_->Tell(pos); }
 
@@ -287,9 +292,9 @@ class FileOutputStream::FileOutputStreamImpl : public OSFile {
  public:
   Status Open(const std::string& path, bool append) {
     const bool truncate = !append;
-    return OpenWriteable(path, truncate, append, true /* write_only */);
+    return OpenWritable(path, truncate, append, true /* write_only */);
   }
-  Status Open(int fd) { return OpenWriteable(fd); }
+  Status Open(int fd) { return OpenWritable(fd); }
 };
 
 FileOutputStream::FileOutputStream() { impl_.reset(new FileOutputStreamImpl()); }
@@ -334,6 +339,8 @@ Status FileOutputStream::Open(int fd, std::shared_ptr<FileOutputStream>* file) {
 
 Status FileOutputStream::Close() { return impl_->Close(); }
 
+bool FileOutputStream::closed() const { return !impl_->is_open(); }
+
 Status FileOutputStream::Tell(int64_t* pos) const { return impl_->Tell(pos); }
 
 Status FileOutputStream::Write(const void* data, int64_t length) {
@@ -343,62 +350,98 @@ Status FileOutputStream::Write(const void* data, int64_t length) {
 int FileOutputStream::file_descriptor() const { return impl_->fd(); }
 
 // ----------------------------------------------------------------------
-// Implement MemoryMappedFile
-
+// Implement MemoryMappedFile as a buffer subclass
+// The class doesn't differentiate between size and capacity
 class MemoryMappedFile::MemoryMap : public MutableBuffer {
  public:
   MemoryMap() : MutableBuffer(nullptr, 0) {}
 
   ~MemoryMap() {
-    if (file_->is_open()) {
-      munmap(mutable_data_, static_cast<size_t>(size_));
-      DCHECK(file_->Close().ok());
+    DCHECK_OK(Close());
+    if (mutable_data_ != nullptr) {
+      DCHECK_EQ(munmap(mutable_data_, static_cast<size_t>(size_)), 0);
     }
   }
 
-  Status Open(const std::string& path, FileMode::type mode) {
-    int prot_flags;
-    int map_mode;
+  Status Close() {
+    if (file_->is_open()) {
+      // NOTE: we don't unmap here, so that buffers exported through Read()
+      // remain valid until the MemoryMap object is destroyed
+      return file_->Close();
+    } else {
+      return Status::OK();
+    }
+  }
 
+  bool closed() const { return !file_->is_open(); }
+
+  Status Open(const std::string& path, FileMode::type mode) {
     file_.reset(new OSFile());
 
     if (mode != FileMode::READ) {
       // Memory mapping has permission failures if PROT_READ not set
-      prot_flags = PROT_READ | PROT_WRITE;
-      map_mode = MAP_SHARED;
+      prot_flags_ = PROT_READ | PROT_WRITE;
+      map_mode_ = MAP_SHARED;
       constexpr bool append = false;
       constexpr bool truncate = false;
       constexpr bool write_only = false;
-      RETURN_NOT_OK(file_->OpenWriteable(path, truncate, append, write_only));
+      RETURN_NOT_OK(file_->OpenWritable(path, truncate, append, write_only));
 
       is_mutable_ = true;
     } else {
-      prot_flags = PROT_READ;
-      map_mode = MAP_PRIVATE;  // Changes are not to be committed back to the file
+      prot_flags_ = PROT_READ;
+      map_mode_ = MAP_PRIVATE;  // Changes are not to be committed back to the file
       RETURN_NOT_OK(file_->OpenReadable(path));
 
       is_mutable_ = false;
     }
 
-    size_ = file_->size();
-
-    void* result = nullptr;
-
     // Memory mapping fails when file size is 0
-    if (size_ > 0) {
-      result =
-          mmap(nullptr, static_cast<size_t>(size_), prot_flags, map_mode, file_->fd(), 0);
-      if (result == MAP_FAILED) {
-        std::stringstream ss;
-        ss << "Memory mapping file failed: " << std::strerror(errno);
-        return Status::IOError(ss.str());
-      }
+    // delay it until the first resize
+    if (file_->size() > 0) {
+      RETURN_NOT_OK(InitMMap(file_->size()));
     }
-
-    data_ = mutable_data_ = reinterpret_cast<uint8_t*>(result);
 
     position_ = 0;
 
+    return Status::OK();
+  }
+
+  // Resize the mmap and file to the specified size.
+  Status Resize(const int64_t new_size) {
+    if (!writable()) {
+      return Status::IOError("Cannot resize a readonly memory map");
+    }
+
+    if (new_size == 0) {
+      if (mutable_data_ != nullptr) {
+        // just unmap the mmap and truncate the file to 0 size
+        if (munmap(mutable_data_, capacity_) != 0) {
+          return Status::IOError("Cannot unmap the file");
+        }
+        RETURN_NOT_OK(internal::FileTruncate(file_->fd(), 0));
+        data_ = mutable_data_ = nullptr;
+        size_ = capacity_ = 0;
+      }
+      position_ = 0;
+      return Status::OK();
+    }
+
+    if (mutable_data_) {
+      void* result;
+      RETURN_NOT_OK(
+          internal::MemoryMapRemap(mutable_data_, size_, new_size, file_->fd(), &result));
+      size_ = capacity_ = new_size;
+      data_ = mutable_data_ = static_cast<uint8_t*>(result);
+      if (position_ > size_) {
+        position_ = size_;
+      }
+    } else {
+      DCHECK_EQ(position_, 0);
+      // the mmap is not yet initialized, resize the underlying
+      // file, since it might have been 0-sized
+      RETURN_NOT_OK(InitMMap(new_size, /*resize_file*/ true));
+    }
     return Status::OK();
   }
 
@@ -424,11 +467,34 @@ class MemoryMappedFile::MemoryMap : public MutableBuffer {
 
   int fd() const { return file_->fd(); }
 
-  std::mutex& lock() { return file_->lock(); }
+  std::mutex& write_lock() { return file_->lock(); }
+
+  std::mutex& resize_lock() { return resize_lock_; }
 
  private:
+  // Initialize the mmap and set size, capacity and the data pointers
+  Status InitMMap(int64_t initial_size, bool resize_file = false) {
+    if (resize_file) {
+      RETURN_NOT_OK(internal::FileTruncate(file_->fd(), initial_size));
+    }
+    DCHECK(data_ == nullptr && mutable_data_ == nullptr);
+    void* result = mmap(nullptr, static_cast<size_t>(initial_size), prot_flags_,
+                        map_mode_, file_->fd(), 0);
+    if (result == MAP_FAILED) {
+      std::stringstream ss;
+      ss << "Memory mapping file failed: " << std::strerror(errno);
+      return Status::IOError(ss.str());
+    }
+    size_ = capacity_ = initial_size;
+    data_ = mutable_data_ = static_cast<uint8_t*>(result);
+
+    return Status::OK();
+  }
   std::unique_ptr<OSFile> file_;
+  int prot_flags_;
+  int map_mode_;
   int64_t position_;
+  std::mutex resize_lock_;
 };
 
 MemoryMappedFile::MemoryMappedFile() {}
@@ -456,9 +522,13 @@ Status MemoryMappedFile::Open(const std::string& path, FileMode::type mode,
   return Status::OK();
 }
 
-Status MemoryMappedFile::GetSize(int64_t* size) {
+Status MemoryMappedFile::GetSize(int64_t* size) const {
   *size = memory_map_->size();
   return Status::OK();
+}
+
+Status MemoryMappedFile::GetSize(int64_t* size) {
+  return static_cast<const MemoryMappedFile*>(this)->GetSize(size);
 }
 
 Status MemoryMappedFile::Tell(int64_t* position) const {
@@ -468,23 +538,18 @@ Status MemoryMappedFile::Tell(int64_t* position) const {
 
 Status MemoryMappedFile::Seek(int64_t position) { return memory_map_->Seek(position); }
 
-Status MemoryMappedFile::Close() {
-  // munmap handled in pimpl dtor
-  return Status::OK();
-}
+Status MemoryMappedFile::Close() { return memory_map_->Close(); }
 
-Status MemoryMappedFile::ReadAt(int64_t position, int64_t nbytes, int64_t* bytes_read,
-                                void* out) {
-  nbytes = std::max<int64_t>(0, std::min(nbytes, memory_map_->size() - position));
-  if (nbytes > 0) {
-    std::memcpy(out, memory_map_->data() + position, static_cast<size_t>(nbytes));
-  }
-  *bytes_read = nbytes;
-  return Status::OK();
-}
+bool MemoryMappedFile::closed() const { return memory_map_->closed(); }
 
 Status MemoryMappedFile::ReadAt(int64_t position, int64_t nbytes,
                                 std::shared_ptr<Buffer>* out) {
+  // if the file is writable, we acquire the lock before creating any slices
+  // in case a resize is triggered concurrently, otherwise we wouldn't detect
+  // a change in the use count
+  auto guard_resize = memory_map_->writable()
+                          ? std::unique_lock<std::mutex>(memory_map_->resize_lock())
+                          : std::unique_lock<std::mutex>();
   nbytes = std::max<int64_t>(0, std::min(nbytes, memory_map_->size() - position));
 
   if (nbytes > 0) {
@@ -492,6 +557,19 @@ Status MemoryMappedFile::ReadAt(int64_t position, int64_t nbytes,
   } else {
     *out = std::make_shared<Buffer>(nullptr, 0);
   }
+  return Status::OK();
+}
+
+Status MemoryMappedFile::ReadAt(int64_t position, int64_t nbytes, int64_t* bytes_read,
+                                void* out) {
+  auto guard_resize = memory_map_->writable()
+                          ? std::unique_lock<std::mutex>(memory_map_->resize_lock())
+                          : std::unique_lock<std::mutex>();
+  nbytes = std::max<int64_t>(0, std::min(nbytes, memory_map_->size() - position));
+  if (nbytes > 0) {
+    memcpy(out, memory_map_->data() + position, static_cast<size_t>(nbytes));
+  }
+  *bytes_read = nbytes;
   return Status::OK();
 }
 
@@ -510,7 +588,7 @@ Status MemoryMappedFile::Read(int64_t nbytes, std::shared_ptr<Buffer>* out) {
 bool MemoryMappedFile::supports_zero_copy() const { return true; }
 
 Status MemoryMappedFile::WriteAt(int64_t position, const void* data, int64_t nbytes) {
-  std::lock_guard<std::mutex> guard(memory_map_->lock());
+  std::lock_guard<std::mutex> guard(memory_map_->write_lock());
 
   if (!memory_map_->opened() || !memory_map_->writable()) {
     return Status::IOError("Unable to write");
@@ -520,11 +598,15 @@ Status MemoryMappedFile::WriteAt(int64_t position, const void* data, int64_t nby
   }
 
   RETURN_NOT_OK(memory_map_->Seek(position));
+  if (nbytes + memory_map_->position() > memory_map_->size()) {
+    return Status::Invalid("Cannot write past end of memory map");
+  }
+
   return WriteInternal(data, nbytes);
 }
 
 Status MemoryMappedFile::Write(const void* data, int64_t nbytes) {
-  std::lock_guard<std::mutex> guard(memory_map_->lock());
+  std::lock_guard<std::mutex> guard(memory_map_->write_lock());
 
   if (!memory_map_->opened() || !memory_map_->writable()) {
     return Status::IOError("Unable to write");
@@ -539,6 +621,20 @@ Status MemoryMappedFile::Write(const void* data, int64_t nbytes) {
 Status MemoryMappedFile::WriteInternal(const void* data, int64_t nbytes) {
   memcpy(memory_map_->head(), data, static_cast<size_t>(nbytes));
   memory_map_->advance(nbytes);
+  return Status::OK();
+}
+
+Status MemoryMappedFile::Resize(int64_t new_size) {
+  std::unique_lock<std::mutex> write_guard(memory_map_->write_lock(), std::defer_lock);
+  std::unique_lock<std::mutex> resize_guard(memory_map_->resize_lock(), std::defer_lock);
+  std::lock(write_guard, resize_guard);
+  // having both locks, we can check the number of times memory_map_
+  // was borrwed (meaning number of reader still holding a ref to it + 1)
+  // and if it's greater than 1, we fail loudly
+  if (memory_map_.use_count() > 1) {
+    return Status::IOError("Cannot resize memory map while there are active readers");
+  }
+  RETURN_NOT_OK(memory_map_->Resize(new_size));
   return Status::OK();
 }
 

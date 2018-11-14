@@ -28,15 +28,15 @@ type {{.Name}}Builder struct {
 	builder
 
 {{if .Opt.Parametric -}}
-	typE    *arrow.{{.Name}}Type
+	dtype    *arrow.{{.Name}}Type
 {{end -}}
 	data    *memory.Buffer
 	rawData []{{or .QualifiedType .Type}}
 }
 
 {{if .Opt.Parametric}}
-func New{{.Name}}Builder(mem memory.Allocator, typE *arrow.{{.Name}}Type) *{{.Name}}Builder {
-	return &{{.Name}}Builder{builder: builder{refCount:1, mem: mem}, typE: typE}
+func New{{.Name}}Builder(mem memory.Allocator, dtype *arrow.{{.Name}}Type) *{{.Name}}Builder {
+	return &{{.Name}}Builder{builder: builder{refCount:1, mem: mem}, dtype: dtype}
 }
 {{else}}
 func New{{.Name}}Builder(mem memory.Allocator) *{{.Name}}Builder {
@@ -57,6 +57,7 @@ func (b *{{.Name}}Builder) Release() {
 		if b.data != nil {
 			b.data.Release()
 			b.data = nil
+			b.rawData = nil
 		}
 	}
 }
@@ -81,7 +82,7 @@ func (b *{{.Name}}Builder) UnsafeAppendBoolToBitmap(isValid bool) {
 	if isValid {
 		bitutil.SetBit(b.nullBitmap.Bytes(), b.length)
 	} else {
-		b.nullN++
+		b.nulls++
 	}
 	b.length++
 }
@@ -119,6 +120,7 @@ func (b *{{.Name}}Builder) Reserve(n int) {
 // Resize adjusts the space allocated by b to n elements. If n is greater than b.Cap(),
 // additional memory will be allocated. If n is smaller, the allocated memory may reduced.
 func (b *{{.Name}}Builder) Resize(n int) {
+	nBuilder := n
 	if n < minBuilderCapacity {
 		n = minBuilderCapacity
 	}
@@ -126,10 +128,16 @@ func (b *{{.Name}}Builder) Resize(n int) {
 	if b.capacity == 0 {
 		b.init(n)
 	} else {
-		b.builder.resize(n, b.init)
+		b.builder.resize(nBuilder, b.init)
 		b.data.Resize(arrow.{{.Name}}Traits.BytesRequired(n))
 		b.rawData = arrow.{{.Name}}Traits.CastFromBytes(b.data.Bytes())
 	}
+}
+
+// NewArray creates a {{.Name}} array from the memory buffers used by the builder and resets the {{.Name}}Builder
+// so it can be used to build a new array.
+func (b *{{.Name}}Builder) NewArray() Interface {
+	return b.New{{.Name}}Array()
 }
 
 // New{{.Name}}Array creates a {{.Name}} array from the memory buffers used by the builder and resets the {{.Name}}Builder
@@ -148,9 +156,9 @@ func (b *{{.Name}}Builder) newData() (data *Data) {
 		b.data.Resize(bytesRequired)
 	}
 {{if .Opt.Parametric -}}
-	data = NewData(b.typE, b.length, []*memory.Buffer{b.nullBitmap, b.data}, b.nullN)
+	data = NewData(b.dtype, b.length, []*memory.Buffer{b.nullBitmap, b.data}, nil, b.nulls, 0)
 {{else -}}
-	data = NewData(arrow.PrimitiveTypes.{{.Name}}, b.length, []*memory.Buffer{b.nullBitmap, b.data}, b.nullN)
+	data = NewData(arrow.PrimitiveTypes.{{.Name}}, b.length, []*memory.Buffer{b.nullBitmap, b.data}, nil, b.nulls, 0)
 {{end -}}
 	b.reset()
 
@@ -163,3 +171,9 @@ func (b *{{.Name}}Builder) newData() (data *Data) {
 	return
 }
 {{end}}
+
+var (
+{{- range .In}}
+	_ Builder = (*{{.Name}}Builder)(nil)
+{{- end}}
+)
