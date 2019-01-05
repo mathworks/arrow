@@ -533,7 +533,8 @@ void ColumnWriter::FlushBufferedDataPages() {
 template <typename Type>
 TypedColumnWriter<Type>::TypedColumnWriter(ColumnChunkMetaDataBuilder* metadata,
                                            std::unique_ptr<PageWriter> pager,
-                                           bool use_dictionary, Encoding::type encoding,
+                                           const bool use_dictionary,
+                                           Encoding::type encoding,
                                            const WriterProperties* properties)
     : ColumnWriter(metadata, std::move(pager), use_dictionary, encoding, properties) {
   if (use_dictionary) {
@@ -608,8 +609,8 @@ std::shared_ptr<ColumnWriter> ColumnWriter::Make(ColumnChunkMetaDataBuilder* met
                                                  std::unique_ptr<PageWriter> pager,
                                                  const WriterProperties* properties) {
   const ColumnDescriptor* descr = metadata->descr();
-  bool use_dictionary = properties->dictionary_enabled(descr->path()) &&
-                        descr->physical_type() != Type::BOOLEAN;
+  const bool use_dictionary = properties->dictionary_enabled(descr->path()) &&
+                              descr->physical_type() != Type::BOOLEAN;
   Encoding::type encoding = properties->encoding(descr->path());
   if (use_dictionary) {
     encoding = properties->dictionary_index_encoding();
