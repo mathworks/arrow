@@ -26,6 +26,6 @@ pushd $ARROW_MATLAB_DIR
 mkdir lib
 cp -r $ARROW_CPP_INSTALL lib/arrow
 
-matlab-runner -dai -i . -sd ci test
+matlab-runner -dai -i . -sd ci "build; test"
 
 popd
