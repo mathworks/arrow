@@ -27,6 +27,12 @@ mkdir lib
 cp -r $ARROW_CPP_INSTALL lib/arrow
 rm lib/arrow/lib/*.a
 
+du -h .
+ls -lah .
+ls -lah lib
+ls -lah lib/arrow
+ls -lah lib/arrow/lib
+
 matlab-runner -dai -i . -dao test
 
 popd

@@ -17,6 +17,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-set -x
+set -ex
 
 source /dev/stdin <<< "$(curl -sL https://ssd.mathworks.com/supportfiles/matlab-runner/install)"
