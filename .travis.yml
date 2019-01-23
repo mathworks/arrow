@@ -345,7 +345,21 @@ matrix:
     - export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$TRAVIS_BUILD_DIR/cpp-install/lib
     - export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$TRAVIS_BUILD_DIR/cpp-install/lib/pkgconfig
     - pushd ${TRAVIS_BUILD_DIR}/r
-
+  - name: MATLAB
+    language: java
+    os: linux
+    dist: xenial
+    jdk: openjdk8
+    env:
+    - ARROW_BUILD_TYPE=release
+    - ARROW_TRAVIS_VENDORED_BOOST=1
+    before_script:
+    - if [ $ARROW_CI_MATLAB_AFFECTED != "1" ]; then exit; fi
+    - $TRAVIS_BUILD_DIR/ci/travis_install_linux.sh
+    - $TRAVIS_BUILD_DIR/ci/travis_before_script_cpp.sh --only-library
+    - $TRAVIS_BUILD_DIR/ci/travis_before_script_matlab.sh
+    script:
+    - $TRAVIS_BUILD_DIR/ci/travis_script_matlab.sh
 
 after_failure:
 - |
