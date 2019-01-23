@@ -20,10 +20,6 @@ env;
 
 compile();
 
-libpath = getenv('LD_LIBRARY_PATH');
-setenv('LD_LIBRARY_PATH', [fullfile(arrowDir, 'lib') ':' libpath]);
-restoreLibpath = onCleanup(@()setenv('LD_LIBRARY_PATH', libpath));
-
 mpath = addpath(srcDir, buildDir);
 restoreMpath = onCleanup(@()path(mpath));
 
