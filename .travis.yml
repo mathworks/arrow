@@ -352,6 +352,7 @@ matrix:
     jdk: openjdk8
     env:
     - ARROW_BUILD_TYPE=release
+    - ARROW_TRAVIS_VENDORED_BOOST=1
     before_script:
     - if [ $ARROW_CI_MATLAB_AFFECTED != "1" ]; then exit; fi
     - $TRAVIS_BUILD_DIR/ci/travis_install_linux.sh
