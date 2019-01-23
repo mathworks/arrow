@@ -18,8 +18,14 @@ function test()
 
 env;
 
-p = addpath(srcDir, buildDir);
-restorePath = onCleanup(@()path(p));
+compile();
+
+libpath = getenv('LD_LIBRARY_PATH');
+setenv('LD_LIBRARY_PATH', [fullfile(arrowDir, 'lib') ':' libpath]);
+restoreLibpath = onCleanup(@()setenv('LD_LIBRARY_PATH', libpath));
+
+mpath = addpath(srcDir, buildDir);
+restoreMpath = onCleanup(@()path(mpath));
 
 results = runtests(testDir, 'IncludeSubfolders', true);
 assert(all(~[results.Failed]));
