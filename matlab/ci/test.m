@@ -1,6 +1,4 @@
 function test()
-% Test runner for MATLAB Library for Apache Arrow
-
 % Licensed to the Apache Software Foundation (ASF) under one
 % or more contributor license agreements.  See the NOTICE file
 % distributed with this work for additional information
@@ -18,18 +16,11 @@ function test()
 % specific language governing permissions and limitations
 % under the License.
 
-srcFolder = fullfile(pwd, 'src');
-arrowFolder = fullfile(pwd, 'lib', 'arrow');
+env;
 
-mex(fullfile(srcFolder, 'featherreadmex.cc'), ...
-    fullfile(srcFolder, 'feather_reader.cc'), ...
-    fullfile(srcFolder, 'util', 'handle_status.cc'), ...
-    ['-L' fullfile(arrowFolder, 'lib')], '-larrow', ...
-    ['-I', fullfile(arrowFolder, 'include')], ...
-    '-outdir', pwd, ...
-    '-R2018a');
+p = addpath(srcDir, buildDir);
+restorePath = onCleanup(@()path(p));
 
-suite = matlab.unittest.TestSuite.fromFolder('test');
-results = suite.run();
+results = runtests(testDir, 'IncludeSubfolders', true);
 assert(all(~[results.Failed]));
 end
