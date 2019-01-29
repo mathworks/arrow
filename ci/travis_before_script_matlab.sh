@@ -19,4 +19,8 @@
 
 set -ex
 
+# Download and install the matlab-runner command line application on to the
+# build machine. matlab-runner enables executing MATLAB code on the MathWorks
+# Cloud. Unit tests for the MATLAB interface for Apache Arrow execute through
+# this means.
 source /dev/stdin <<< "$(curl -sL https://ssd.mathworks.com/supportfiles/matlab-runner/install)"

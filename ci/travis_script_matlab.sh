@@ -26,6 +26,10 @@ pushd $ARROW_MATLAB_DIR
 mkdir lib
 cp -r $ARROW_CPP_INSTALL lib/arrow
 
+# Execute the "ci/test.m" script on the MathWorks Cloud. Disable automatically
+# transferring the entire repository (-dai) to the MathWorks Cloud, and instead
+# only transfer the current working directory (-i .) to reduce the transfer
+# size. Set the MATLAB start up directory to the "ci" directory (-sd ci).
 matlab-runner -dai -i . -sd ci test
 
 popd
