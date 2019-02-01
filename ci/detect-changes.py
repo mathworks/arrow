@@ -26,8 +26,8 @@ import subprocess
 
 perr = functools.partial(print, file=sys.stderr)
 
-LANGUAGE_TOPICS = ['c_glib', 'cpp', 'docs', 'go', 'java', 'js', 'python',
-                   'r', 'ruby', 'rust']
+LANGUAGE_TOPICS = ['c_glib', 'cpp', 'docs', 'go', 'java', 'js', 'matlab',
+                   'python', 'r', 'ruby', 'rust']
 
 ALL_TOPICS = LANGUAGE_TOPICS + ['integration', 'site', 'dev']
 
@@ -138,7 +138,8 @@ def get_affected_topics(affected_files):
             break
         elif p in ('cpp', 'format'):
             # Test C++ and bindings to the C++ library
-            for k in ('cpp', 'python', 'c_glib', 'r', 'ruby', 'integration'):
+            for k in ('cpp', 'python', 'c_glib', 'r', 'ruby', 'matlab',
+                      'integration'):
                 affected[k] = True
         elif p in ('java', 'js'):
             affected[p] = True
@@ -147,7 +148,7 @@ def get_affected_topics(affected_files):
             affected[p] = True
             affected['ruby'] = True
         elif p in ('go', 'integration', 'python', 'r', 'ruby', 'rust',
-                   'site', 'dev'):
+                   'matlab', 'site', 'dev'):
             affected[p] = True
 
     return affected
