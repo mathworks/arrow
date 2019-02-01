@@ -23,6 +23,6 @@ compile();
 mpath = addpath(srcDir, buildDir);
 restoreMpath = onCleanup(@()path(mpath));
 
-results = runtests(testDir, 'IncludeSubfolders', true);
+results = runtests(testDir, 'IncludeSubfolders', true, 'OutputDetail', 3);
 assert(all(~[results.Failed]));
 end
