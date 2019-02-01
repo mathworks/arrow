@@ -15,9 +15,9 @@
 % specific language governing permissions and limitations
 % under the License.
 
-envDir = fileparts(mfilename('fullpath'));
+scriptDir = fileparts(mfilename('fullpath'));
 
-srcDir = fullfile(envDir, '..', 'src');
-testDir = fullfile(envDir, '..', 'test');
-arrowDir = fullfile(envDir, '..', 'lib', 'arrow');
-buildDir = fullfile(envDir, '..', 'build');
+srcDir = fullfile(scriptDir, '..', 'src');
+testDir = fullfile(scriptDir, '..', 'test');
+arrowDir = fullfile(scriptDir, '..', 'lib', 'arrow');
+buildDir = fullfile(scriptDir, '..', 'build');

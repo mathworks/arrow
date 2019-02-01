@@ -1,4 +1,4 @@
-function compile()
+function test()
 % Licensed to the Apache Software Foundation (ASF) under one
 % or more contributor license agreements.  See the NOTICE file
 % distributed with this work for additional information
@@ -16,16 +16,13 @@ function compile()
 % specific language governing permissions and limitations
 % under the License.
 
-env;
+common_vars;
 
-mkdir(buildDir);
+compile();
 
-mex(fullfile(srcDir, 'featherreadmex.cc'), ...
-    fullfile(srcDir, 'feather_reader.cc'), ...
-    fullfile(srcDir, 'util', 'handle_status.cc'), ...
-    ['-L' fullfile(arrowDir, 'lib')], '-larrow', ...
-    ['-I', fullfile(arrowDir, 'include')], ...
-    ['LDFLAGS="\$LDFLAGS -Wl,-rpath=', fullfile(arrowDir, 'lib') '"'], ...
-    '-outdir', buildDir, ...
-    '-R2018a');
+mpath = addpath(srcDir, buildDir);
+restoreMpath = onCleanup(@()path(mpath));
+
+results = runtests(testDir, 'IncludeSubfolders', true);
+assert(all(~[results.Failed]));
 end
