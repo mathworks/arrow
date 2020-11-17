@@ -227,6 +227,12 @@ classdef tfeather < matlab.unittest.TestCase
             testCase.verifyNotEqual(actualTable, expectedTable);
         end
         
+        function DummyTest(testCase)
+        %This is a dummy test to check CI operations 
+            disp('dummy test');
+            testCase.verifyTrue(true);
+        end
+
     end
     
 end
