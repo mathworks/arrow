@@ -230,7 +230,7 @@ classdef tfeather < matlab.unittest.TestCase
         function DummyTest(testCase)
         %This is a dummy test to check CI operations 
             disp('dummy test');
-            testCase.verifyTrue(true);
+            testCase.verifyTrue(false);
         end
 
     end
