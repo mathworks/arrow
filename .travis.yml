@@ -163,7 +163,3 @@ after_success:
          "${TRAVIS_REPO_SLUG}" = "apache/arrow" ]; then
       archery docker push ${DOCKER_IMAGE_ID} || :
     fi
-
-language: matlab
-matlab:
-  - latest  # Default MATLAB release on Travis CI
