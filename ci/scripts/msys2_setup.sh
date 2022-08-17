@@ -69,6 +69,13 @@ case "${target}" in
     ;;
 esac
 
+case "${target}" in
+  cgo)
+    packages+=(${MINGW_PACKAGE_PREFIX}-arrow)
+    packages+=(${MINGW_PACKAGE_PREFIX}-gtest)
+    ;;
+esac
+
 pacman \
   --needed \
   --noconfirm \
