@@ -102,7 +102,12 @@ jobs:
           fetch-depth: 0
       - name: Install ninja-build
         run: choco install ninja
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW${{ matrix.mingw-n-bits }}
+          update: true
       - name: Setup MSYS2
+        shell: msys2 {0}
         run: bash ci/scripts/msys2_setup.sh "matlab"
       - name: Install MATLAB
         uses: matlab-actions/setup-matlab@v1
