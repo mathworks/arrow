@@ -95,8 +95,6 @@ jobs:
     name: AMD64 Windows 2022 MATLAB
     runs-on: windows-latest
     if: ${{ !contains(github.event.pull_request.title, 'WIP') }}
-    env:
-      CMAKE_ARGS: 'MINGW_PACKAGE_PREFIX=mingw-w64-x86_64'
     steps:
       - name: Check out repository        
         uses: actions/checkout@v3

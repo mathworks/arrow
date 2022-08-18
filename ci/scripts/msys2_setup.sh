@@ -71,8 +71,8 @@ esac
 
 case "${target}" in
   matlab)
-    packages+=(${MINGW_PACKAGE_PREFIX}-arrow)
-    packages+=(${MINGW_PACKAGE_PREFIX}-gtest)
+    packages+=(mingw-w64-x86_64-arrow)
+    packages+=(mingw-w64-x86_64-gtest)
     ;;
 esac
 
