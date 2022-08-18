@@ -70,7 +70,7 @@ case "${target}" in
 esac
 
 case "${target}" in
-  cgo)
+  matlab)
     packages+=(${MINGW_PACKAGE_PREFIX}-arrow)
     packages+=(${MINGW_PACKAGE_PREFIX}-gtest)
     ;;
