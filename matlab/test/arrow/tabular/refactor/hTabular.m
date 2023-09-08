@@ -33,6 +33,31 @@ classdef hTabular < matlab.unittest.TestCase
         ColumnNames = { ["X", "Y", "Z"], ["😀", "🌲", "🥭"], ["", " ", ""]};
         ArrowArrays = {arrow.array([1, 2, 3]), arrow.array(["A", "B", "C"]), arrow.array([true, false, true])}
         MatlabTableEmptyNoColumns = { table.empty(0, 0), table.empty(1, 0) };
+
+        Index = struct(...
+            ...
+            InvalidNumericColumnIndex=struct(...
+                Value=4, ...
+                Error="arrow:tabular:indexing:InvalidNumericColumnIndex" ...
+            ), ...
+            ...
+            UnsupportedIndexType=struct(...
+                Value=datetime(2022, 1, 3), ...
+                Error="arrow:badsubscript:UnsupportedIndexType" ...
+            ), ...
+            ...
+            NonScalar=struct(...
+                Value=[1, 2; 3, 4], ...
+                Error="arrow:badsubscript:NonScalar" ...
+            ), ...
+            ...
+            NonPositive=struct(...
+                Value=-1, ...
+                Error="arrow:badsubscript:NonPositive" ...
+            ) ...
+            ...
+        )
+
     end
 
     properties
@@ -44,6 +69,15 @@ classdef hTabular < matlab.unittest.TestCase
             ["A"; "B"; "C"], ...
             [true; false; true] ...
         )
+        ArrowTabularTypeBasic
+
+    end
+
+    methods (TestClassSetup)
+
+        function initializeProperties(testCase)
+            testCase.ArrowTabularTypeBasic = testCase.TabularConstructionFunction(testCase.MatlabTableBasic);
+        end
 
     end
 
@@ -106,7 +140,7 @@ classdef hTabular < matlab.unittest.TestCase
             testCase.verifyEqual(actual, expected);
         end
 
-        function ColumnNumericIndexWithEmptyTabularTypeError(testCase)
+        function ColumnIndexingEmptyTableError(testCase)
             % Verify that an arrow:tabular:indexing:NumericIndexWithEmptyTabularType
             % error is thrown when calling the column(index) method on an empty
             % Arrow tabular type with no columns (i.e. 0x0 and 1x0).
@@ -115,27 +149,23 @@ classdef hTabular < matlab.unittest.TestCase
             testCase.verifyError(fcn, "arrow:tabular:indexing:NumericIndexWithEmptyTabularType");
         end
 
-        function ColumnInvalidNumericColumnIndexError(testCase)
-            % Verify that an arrow:tabular:indexing:InvalidNumericColumnIndex
-            % error is thrown when a numeric index value is provided to the
-            % column(index) method that is outside the range of valid column
-            % indices (e.g. greater than the number of columns).
-            matlabTable = testCase.MatlabTableBasic;
-            arrowTabularType = testCase.TabularConstructionFunction(matlabTable);
-            fcn = @() arrowTabularType.column(4);
-            testCase.verifyError(fcn, "arrow:tabular:indexing:InvalidNumericColumnIndex");
+        function ColumnIndexingError(testCase, Index)
+            % Verify that appropriate errors are thrown when invalid
+            % index values are provided to the column(index) method.
+            fcn = @() testCase.ArrowTabularTypeBasic.column(Index.Value);
+            testCase.verifyError(fcn, Index.Error);
         end
 
     end
 
     methods
 
-        function arrowTabularType = makeEmptyNoColumnsArrowTabularType(testCase)
-            arrowTabularType = testCase.TabularFromArraysFunction();
-        end
-
         function arrowTabularType = makeEmptyNoRowsArrowTabularType(testCase)
             arrowTabularType = testCase.TabularFromArraysFunction(arrow.array([]), ColumnNames="Var1");
+        end
+
+        function arrowTabularType = makeEmptyNoColumnsArrowTabularType(testCase)
+            arrowTabularType = testCase.TabularFromArraysFunction();
         end
 
     end
