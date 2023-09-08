@@ -36,7 +36,7 @@ namespace arrow::matlab::tabular::proxy {
     namespace {
         libmexclass::error::Error makeEmptyRecordBatchError() {
             const std::string error_msg =  "Numeric indexing using the column method is not supported for record batches with no columns.";
-            return libmexclass::error::Error{error::RECORD_BATCH_NUMERIC_INDEX_WITH_EMPTY_RECORD_BATCH, error_msg};
+            return libmexclass::error::Error{error::TABULAR_INDEXING_NUMERIC_INDEX_WITH_EMPTY_TABULAR_TYPE, error_msg};
         }
 
         libmexclass::error::Error makeInvalidNumericIndexError(const int32_t matlab_index, const int32_t num_columns) {
@@ -46,7 +46,7 @@ namespace arrow::matlab::tabular::proxy {
             error_message_stream << ". Column index must be between 1 and the number of columns (";
             error_message_stream << num_columns;
             error_message_stream << ").";
-            return libmexclass::error::Error{error::RECORD_BATCH_INVALID_NUMERIC_COLUMN_INDEX, error_message_stream.str()};
+            return libmexclass::error::Error{error::TABULAR_INDEXING_INVALID_NUMERIC_COLUMN_INDEX, error_message_stream.str()};
         }
     }
 
