@@ -29,7 +29,8 @@ classdef hTabular < matlab.unittest.TestCase
 
         MatlabConversionFunction = {@toMATLAB, @table};
         NumColumns = num2cell(int32([0, 1, 2, 5, 10, 100]));
-
+        ColumnNames = { ["X", "Y", "Z"], ["😀", "🌲", "🥭"], ["", " ", ""]};
+        ArrowArrays = {arrow.array([1, 2, 3]), arrow.array(["A", "B", "C"]), arrow.array([true, false, true])}
     end
 
     properties
@@ -76,6 +77,14 @@ classdef hTabular < matlab.unittest.TestCase
             matlabTable = array2table(ones(1, NumColumns));
             arrowTable = testCase.TabularConstructionFunction(matlabTable);
             testCase.verifyEqual(arrowTable.NumColumns, NumColumns);
+        end
+
+        function PropertyColumnNames(testCase, ColumnNames)
+            % Verify that the ColumnNames property of an Arrow tabular type
+            % returns the expected string array of column names.
+            fromArraysFunctionName = testCase.TabularClassName + "." + "fromArrays";
+            arrowTable = feval(fromArraysFunctionName, testCase.ArrowArrays{:}, ColumnNames=ColumnNames);
+            testCase.verifyEqual(arrowTable.ColumnNames, ColumnNames);
         end
 
     end
