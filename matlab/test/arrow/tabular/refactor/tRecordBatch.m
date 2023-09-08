@@ -21,6 +21,9 @@ classdef tRecordBatch < hTabular
     properties
 
         TabularClassName = "arrow.tabular.RecordBatch"
+        TabularColumnType = "arrow.array.Array"
+        TabularColumnConstructionFunction = @arrow.array
+        TabularColumnDataConstructionFunction = @ (data) data
         TabularConstructionFunction = @arrow.recordBatch
         TabularFromArraysFunction = @arrow.tabular.RecordBatch.fromArrays;
 

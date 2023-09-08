@@ -21,6 +21,9 @@ classdef tTable < hTabular
     properties
 
         TabularClassName = "arrow.tabular.Table"
+        TabularColumnType = "arrow.array.ChunkedArray"
+        TabularColumnConstructionFunction = @arrow.array.ChunkedArray.fromArrays
+        TabularColumnDataConstructionFunction = @arrow.array
         TabularConstructionFunction = @arrow.table
         TabularFromArraysFunction = @arrow.tabular.Table.fromArrays;
 
