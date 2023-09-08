@@ -22,6 +22,7 @@ classdef tTableRefactor < hTabular
 
         TabularClassName = "arrow.tabular.Table"
         TabularConstructionFunction = @arrow.table
+        TabularFromArraysFunction = @arrow.tabular.Table.fromArrays;
 
     end
 

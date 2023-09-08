@@ -22,6 +22,7 @@ classdef tRecordBatchRefactor < hTabular
 
         TabularClassName = "arrow.tabular.RecordBatch"
         TabularConstructionFunction = @arrow.recordBatch
+        TabularFromArraysFunction = @arrow.tabular.RecordBatch.fromArrays;
 
     end
 
