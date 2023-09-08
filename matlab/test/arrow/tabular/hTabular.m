@@ -28,6 +28,7 @@ classdef hTabular < matlab.unittest.TestCase
     properties (TestParameter)
 
         MatlabConversionFunction = {@toMATLAB, @table};
+        NumColumns = num2cell(int32([0, 1, 2, 5, 10, 100]));
 
     end
 
@@ -67,6 +68,14 @@ classdef hTabular < matlab.unittest.TestCase
             arrowTable = testCase.TabularConstructionFunction(expectedMatlabTable);
             actualMatlabTable = MatlabConversionFunction(arrowTable);
             testCase.verifyEqual(actualMatlabTable, expectedMatlabTable);
+        end
+
+        function PropertyNumColumns(testCase, NumColumns)
+            % Verify that the NumColumns property of an Arrow tabular type
+            % returns the expected number of columns.
+            matlabTable = array2table(ones(1, NumColumns));
+            arrowTable = testCase.TabularConstructionFunction(matlabTable);
+            testCase.verifyEqual(arrowTable.NumColumns, NumColumns);
         end
 
     end
