@@ -33,6 +33,8 @@ classdef hTabular < matlab.unittest.TestCase
             [true; false; true] ...
         )
 
+        MatlabTableAllTypes = arrow.internal.test.tabular.createTableWithSupportedTypes()
+
     end
 
     methods (Test)
@@ -43,6 +45,17 @@ classdef hTabular < matlab.unittest.TestCase
             % tabular type.
             arrowTable = testCase.TabularConstructionFunction(testCase.MatlabTableBasic);
             testCase.verifyInstanceOf(arrowTable, testCase.TabularClassName);
+        end
+
+        function SupportedTypesRoundTrip(testCase)
+            % Verify that a MATLAB table containing all types
+            % supported for conversion to Arrow Arrays can be round-tripped
+            % from an Arrow tabular type to a MATLAB table and back.
+            import arrow.type.traits.traits
+
+            matlabTable = testCase.MatlabTableAllTypes;
+            arrowTable = testCase.TabularConstructionFunction(matlabTable);
+            testCase.verifyEqual(matlabTable, toMATLAB(arrowTable));
         end
 
     end
