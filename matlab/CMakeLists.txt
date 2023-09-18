@@ -136,7 +136,7 @@ macro(enable_gtest)
       "${ARROW_GTEST_SHARED_LIB_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}arrow_gtest_main${CMAKE_SHARED_LIBRARY_SUFFIX}"
   )
 
-  list(APPEND ARROW_CMAKE_ARGS "-DARROW_BUILD_TESTS=ON -DARROW_CSV=ON")
+  list(APPEND ARROW_CMAKE_ARGS "-DARROW_BUILD_TESTS=ON -DARROW_CSV=ON -DARROW_JSON=ON")
 
   # The appropriate libraries need to be guaranteed to be available when linking the test
   # executables.
