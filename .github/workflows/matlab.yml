@@ -54,7 +54,7 @@ jobs:
       - name: Install MATLAB
         uses: matlab-actions/setup-matlab@v1
         with:
-          release: R2023a
+          release: R2023b
       - name: Install ccache
         run: sudo apt-get install ccache
       - name: Setup ccache
@@ -102,7 +102,7 @@ jobs:
       - name: Install MATLAB
         uses: matlab-actions/setup-matlab@v1
         with:
-          release: R2023a
+          release: R2023b
       - name: Install ccache
         run: brew install ccache
       - name: Setup ccache
@@ -140,7 +140,7 @@ jobs:
       - name: Install MATLAB
         uses: matlab-actions/setup-matlab@v1
         with:
-          release: R2023a
+          release: R2023b
       - name: Download Timezone Database
         shell: bash
         run: ci/scripts/download_tz_database.sh
