@@ -77,6 +77,12 @@ struct PrettyPrintOptions {
 
   /// If true, display schema metadata when pretty-printing a Schema
   bool show_schema_metadata = true;
+
+  /// If true, include opening ("[") and closing ("]") braces when pretty-printing an Array
+  bool include_braces = false;
+
+  /// Character to use between Array elements (e.g. ",")
+  std::string delimiter = ",";
 };
 
 /// \brief Print human-readable representation of RecordBatch

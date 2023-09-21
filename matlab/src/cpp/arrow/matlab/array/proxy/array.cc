@@ -25,6 +25,9 @@
 
 #include "libmexclass/proxy/ProxyManager.h"
 
+#include <sstream>
+#include "arrow/pretty_print.h"
+
 namespace arrow::matlab::array::proxy {
 
     Array::Array(std::shared_ptr<arrow::Array> array) : array{std::move(array)} {
@@ -44,7 +47,15 @@ namespace arrow::matlab::array::proxy {
 
     void Array::toString(libmexclass::proxy::method::Context& context) {
         ::matlab::data::ArrayFactory factory;
-        const auto str_utf8 = array->ToString();
+        std::stringstream strs;
+        arrow::PrettyPrintOptions options;
+        options.window = 3;
+        options.skip_new_lines = true;
+        options.include_braces = false;
+        options.delimiter = "     ";
+        // MATLAB array display uses 5 spaces between elements.
+        MATLAB_ERROR_IF_NOT_OK_WITH_CONTEXT(arrow::PrettyPrint(*array, options, &strs), context, error::ARRAY_DISPLAY_FAILED);
+        const auto str_utf8 = strs.str();
         MATLAB_ASSIGN_OR_ERROR_WITH_CONTEXT(const auto str_utf16, arrow::util::UTF8StringToUTF16(str_utf8), context, error::UNICODE_CONVERSION_ERROR_ID);
         auto str_mda = factory.createScalar(str_utf16);
         context.outputs[0] = str_mda;
