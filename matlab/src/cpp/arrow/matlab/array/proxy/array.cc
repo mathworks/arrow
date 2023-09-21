@@ -43,6 +43,7 @@ namespace arrow::matlab::array::proxy {
     }
 
     void Array::toString(libmexclass::proxy::method::Context& context) {
+        int x = 123;
         ::matlab::data::ArrayFactory factory;
         const auto str_utf8 = array->ToString();
         MATLAB_ASSIGN_OR_ERROR_WITH_CONTEXT(const auto str_utf16, arrow::util::UTF8StringToUTF16(str_utf8), context, error::UNICODE_CONVERSION_ERROR_ID);
