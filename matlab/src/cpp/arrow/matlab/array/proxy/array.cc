@@ -51,8 +51,8 @@ namespace arrow::matlab::array::proxy {
         arrow::PrettyPrintOptions options;
         options.window = 3;
         options.skip_new_lines = true;
-        options.include_braces = false;
-        options.delimiter = "     ";
+        options.include_braces = true;
+        options.delimiter = ",     ";
         // MATLAB array display uses 5 spaces between elements.
         MATLAB_ERROR_IF_NOT_OK_WITH_CONTEXT(arrow::PrettyPrint(*array, options, &strs), context, error::ARRAY_DISPLAY_FAILED);
         const auto str_utf8 = strs.str();

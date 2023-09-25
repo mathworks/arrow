@@ -62,9 +62,14 @@ classdef (Abstract) Array < matlab.mixin.CustomDisplay & ...
     end
 
     methods (Access=protected)
+
         function displayScalarObject(obj)
-            disp(obj.toString());
+            className = matlab.mixin.CustomDisplay.getClassNameForHeader(obj);
+            indent = "     ";
+            disp("Arrow " + className + " with <strong>"+ obj.Length + "</strong> elements:")
+            disp(newline + indent + obj.toString() + newline);
         end
+
     end
 
     methods
