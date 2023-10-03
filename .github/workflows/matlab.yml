@@ -93,9 +93,9 @@ jobs:
         uses: irongut/CodeCoverageSummary@v1.3.0
         with:
           filename: code-coverage/coverage.xml
-          badeg: true
+          badge: true
           format: markdown
-          hide_brance_rate: true
+          hide_branch_rate: true
           hide_complexity: true
       
   macos:
