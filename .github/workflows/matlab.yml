@@ -88,11 +88,6 @@ jobs:
         uses: matlab-actions/run-tests@v1
         with:
           select-by-folder: matlab/test
-          code-coverage-cobertura: code-coverage/coverage.xml
-        - name: Code Coverage Summary Report
-          uses: irongut/CodeCoverageSummary@v1.3.0
-          with:
-            filename: code-coverage/coverage.xml
   macos:
     name: AMD64 macOS 11 MATLAB
     runs-on: macos-latest
