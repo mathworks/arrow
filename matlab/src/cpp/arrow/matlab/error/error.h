@@ -202,4 +202,7 @@ namespace arrow::matlab::error {
     static const char* INDEX_OUT_OF_RANGE = "arrow:index:OutOfRange";
     static const char* BUFFER_VIEW_OR_COPY_FAILED = "arrow:buffer:ViewOrCopyFailed";
     static const char* ARRAY_PRETTY_PRINT_FAILED = "arrow:array:PrettyPrintFailed";
+    static const char* ARRAY_VALIDATE_MINIMAL_FAILED = "arrow:array:ValidateMinimalFailed";
+    static const char* ARRAY_VALIDATE_FULL_FAILED = "arrow:array:ValidateFullFailed";
+    static const char* ARRAY_VALIDATE_UNSUPPORTED_ENUM = "arrow:array:ValidateUnsupportedEnum";
 }
