@@ -125,11 +125,9 @@ matlabArray =
 
 arrowArray = 
 
-[
-  1,
-  2,
-  3
-]
+  Float64Array with 3 elements and 0 null values:
+
+    1 | 2 | 3
 ```
 
 #### Create a MATLAB `logical` array from an Arrow `BooleanArray`
