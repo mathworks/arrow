@@ -159,7 +159,7 @@ matlabArray =
 
 matlabArray =
 
-  1×5 int8 row vector
+  1x5 int8 row vector
 
     122     -1    127    -10    127
 
@@ -168,22 +168,18 @@ matlabArray =
 
 validElements =
 
-  1×5 logical array
+  1x5 logical array
 
    1   0   1   0   1
 
 % Specify which values are Null/Valid by supplying a logical validity "mask"
 >> arrowArray = arrow.array(matlabArray, Valid=validElements)
 
-arrowArray = 
+arrowArray =
 
-[
-  122,
-  null,
-  127,
-  null,
-  127
-]
+  Int8Array with 5 elements and 2 null values:
+
+    122 | null | 127 | null | 127
 ```
 
 ### Arrow `RecordBatch` class
