@@ -135,19 +135,17 @@ arrowArray =
 ```matlab
 >> arrowArray = arrow.array([true, false, true])
 
-arrowArray = 
+arrowArray =
 
-[
-  true,
-  false,
-  true
-]
+  BooleanArray with 3 elements and 0 null values:
+
+    true | false | true
 
 >> matlabArray = toMATLAB(arrowArray)
 
 matlabArray =
 
-  3×1 logical array
+  3x1 logical array
 
    1
    0
