@@ -16,21 +16,25 @@
 # under the License.
 
 release() {
-  if [ "$#" -lt 3 ]; then
-    echo "Usage: $0 <release_name> <release_description> <release_asset> [prerelease=yes|no]"
+  if [ "$#" -lt 2 ]; then
+    echo "Usage: $0 <name> <asset> [description] [prerelease=yes|no]"
     exit
   fi
 
-  release_name=$1
-  release_description=$2
-  release_asset=$3
+  name=$1
+  asset=$2
+  asset_name=$(basename $asset)
 
-  release_asset_name=$(basename $release_asset)
+  if ["$#" -ge 3]; then
+    description=$3
+  else
+    description=""
+  fi
 
   if ["$#" -ge 4] && ["$4" = "yes"]; then
-      prerelease=true
+    prerelease=true
   else
-      prerelease=false
+    prerelease=false
   fi
 
   release_id=$(gh api -i \
@@ -38,10 +42,10 @@ release() {
                 -H "Accept: application/vnd.github+json" \
                 -H "X-GitHub-Api-Version: 2022-11-28" \
                 /repos/apache/arrow/releases \
-                -f tag_name="${release_name}" \
+                -f tag_name="${name}" \
                 -f target_commitish='main' \
-                -f name="${release_name}" \
-                -f body="${release_description}" \
+                -f name="${name}" \
+                -f body="${description}" \
                 -F draft=false \
                 -F prerelease=${prerelease} \
                 -F generate_release_notes=false} | jq .[] | .id)
@@ -51,6 +55,6 @@ release() {
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
     --hostname github.com \
-    /repos/apache/arrow/releases/${release_id}/assets?name=${release_asset_name} \
-    --input ${release_asset}
+    /repos/apache/arrow/releases/${release_id}/assets?name=${asset_name} \
+    --input ${asset}
 }
