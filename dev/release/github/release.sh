@@ -52,5 +52,5 @@ release() {
     -H "X-GitHub-Api-Version: 2022-11-28" \
     --hostname github.com \
     /repos/apache/arrow/releases/${release_id}/assets?name=${release_asset_name} \
-    -input ${release_asset}
+    --input ${release_asset}
 }
