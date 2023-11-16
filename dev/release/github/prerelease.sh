@@ -16,12 +16,20 @@
 # under the License.
 
 prerelease() {
-  if [ "$#" -ne 3 ]; then
-    echo "Usage: $0 <release_name> <release_description> <release_asset>"
+  if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <name> <asset> [description]"
     exit
   fi
 
+  name=$1
+  asset=$2
+
+  if [ "$#" -ge 3 ]; then
+    description=$3
+  else
+    description=""
+  fi
   . release.sh
 
-  release $1 $2 $3 yes
+  release "$name" "$asset" "$description" yes
 }
