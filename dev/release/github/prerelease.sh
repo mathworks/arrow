@@ -16,7 +16,7 @@
 # under the License.
 
 prerelease() {
-  if [ "$#" -ne 2 ]; then
+  if [ "$#" -lt 2 ]; then
     echo "Usage: $0 <name> <asset> [description]"
     exit
   fi
