@@ -137,3 +137,9 @@ docker_run \
     VERBOSE=${VERBOSE:-no} \
     VERSION=${version} \
     YUM_TARGETS=$(IFS=,; echo "${yum_targets[*]}")
+
+if [ ${UPLOAD_MATLAB} -gt 0 ]; then
+  mltbx_file=$(find ${source_artifacts_dir} -type f -name "arrow-matlab-${version_with_rc}.mltbx")
+  . github/prerelease.sh
+  prerelease ${version_with_rc} ${mltbx_file}
+fi
