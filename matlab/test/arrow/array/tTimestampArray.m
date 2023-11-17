@@ -13,11 +13,19 @@
 % implied.  See the License for the specific language governing
 % permissions and limitations under the License.
 
-classdef tTimestampArray < matlab.unittest.TestCase
+classdef tTimestampArray < matlab.unittest.TestCase & ...
+                           AbstractTestCasesForIndexing
 % Tests for arrow.array.TimestampArray
 
     properties
         ArrowArrayConstructorFcn = @arrow.array.TimestampArray.fromMATLAB
+    end
+
+    properties
+        % Properties required by 'AbstractTestCasesForIndexing'
+        correspondingMATLABArrayForIndexingTests = datetime(2023,1,1,0,0,[0, 1, 0.1, 0.01, 0.001, NaN, 0.000001, 59, 0.999999, NaN], 'TimeZone','UTC');
+        arrowArrayForIndexingTests = arrow.array.TimestampArray.fromMATLAB(...
+                                                   datetime(2023,1,1,0,0,[0, 1, 0.1, 0.01, 0.001, NaN, 0.000001, 59, 0.999999, NaN], 'TimeZone','UTC'));
     end
 
     properties(TestParameter)

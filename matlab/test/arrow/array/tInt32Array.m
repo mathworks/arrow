@@ -13,7 +13,8 @@
 % implied.  See the License for the specific language governing
 % permissions and limitations under the License.
 
-classdef tInt32Array < hNumericArray
+classdef tInt32Array < hNumericArray & ...
+                       AbstractTestCasesForIndexing
 % Tests for arrow.array.Int32Array
 
     properties
@@ -25,5 +26,12 @@ classdef tInt32Array < hNumericArray
         MinValue = intmin("int32")
         NullSubstitutionValue = int32(0)
         ArrowType = arrow.int32
+    end
+
+    properties
+        % Properties required by 'AbstractTestCasesForIndexing'
+        correspondingMATLABArrayForIndexingTests = int32([intmax("int32"), 0, intmin("int32"), 0, 100, 1e6, -1e9, intmin("int32"), intmax("int32"), -50]);
+        arrowArrayForIndexingTests = arrow.array.Int32Array.fromMATLAB(...
+                                                   int32([intmax("int32"), 0, intmin("int32"), 0, 100, 1e6, -1e9, intmin("int32"), intmax("int32"), -50]));
     end
 end

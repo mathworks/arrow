@@ -13,7 +13,8 @@
 % implied.  See the License for the specific language governing
 % permissions and limitations under the License.
 
-classdef tUInt8Array < hNumericArray
+classdef tUInt8Array < hNumericArray & ...
+                      AbstractTestCasesForIndexing
 % Tests for arrow.array.UInt8Array
 
     properties
@@ -25,5 +26,12 @@ classdef tUInt8Array < hNumericArray
         MinValue = intmin("uint8")
         NullSubstitutionValue = uint8(0)
         ArrowType = arrow.uint8
+    end
+
+    properties
+        % Properties required by 'AbstractTestCasesForIndexing'
+        correspondingMATLABArrayForIndexingTests = uint8([0, intmax("uint8"), 1, 100, intmax("uint8"), 0, 99, 200, 50, intmax("uint8")-1]);
+        arrowArrayForIndexingTests = arrow.array.UInt8Array.fromMATLAB(...
+                                                   uint8([0, intmax("uint8"), 1, 100, intmax("uint8"), 0, 99, 200, 50, intmax("uint8")-1]));
     end
 end

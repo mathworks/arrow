@@ -13,7 +13,8 @@
 % implied.  See the License for the specific language governing
 % permissions and limitations under the License.
     
-classdef tFloat64Array < hNumericArray
+classdef tFloat64Array < hNumericArray & ...
+                         AbstractTestCasesForIndexing
 % Tests for arrow.array.Float64Array
 
     properties
@@ -25,6 +26,13 @@ classdef tFloat64Array < hNumericArray
         MinValue = realmin("double")
         NullSubstitutionValue = NaN
         ArrowType = arrow.float64
+    end
+
+    properties
+        % Properties required by 'AbstractTestCasesForIndexing'
+        correspondingMATLABArrayForIndexingTests = [1/3, 0.0001, -3.123456789, NaN, 0.1, 0, 1/7, 0.125, 1e-16, -5e-10];
+        arrowArrayForIndexingTests = arrow.array.Float64Array.fromMATLAB(...
+                                                   [1/3, 0.0001, -3.123456789, NaN, 0.1, 0, 1/7, 0.125, 1e-16, -5e-10]);
     end
 
     methods(Test)

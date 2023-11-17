@@ -13,7 +13,8 @@
 % implied.  See the License for the specific language governing
 % permissions and limitations under the License.
 
-classdef tFloat32Array < hNumericArray
+classdef tFloat32Array < hNumericArray & ...
+                         AbstractTestCasesForIndexing
 % Tests for arrow.array.Float32rray
 
     properties
@@ -25,6 +26,13 @@ classdef tFloat32Array < hNumericArray
         MinValue = realmin("single")
         NullSubstitutionValue = single(NaN)
         ArrowType = arrow.float32
+    end
+
+    properties
+        % Properties required by 'AbstractTestCasesForIndexing'
+        correspondingMATLABArrayForIndexingTests = single([1/3, 0.0001, 3.123456789, NaN, 0.1, 0, 1/7, 0.125, 1e-16, 5e-10]);
+        arrowArrayForIndexingTests = arrow.array.Float32Array.fromMATLAB(...
+                                                   single([1/3, 0.0001, 3.123456789, NaN, 0.1, 0, 1/7, 0.125, 1e-16, 5e-10]));
     end
 
     methods(Test)

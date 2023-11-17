@@ -13,16 +13,23 @@
 % implied.  See the License for the specific language governing
 % permissions and limitations under the License.
     
-classdef tBooleanArray < matlab.unittest.TestCase
+classdef tBooleanArray < matlab.unittest.TestCase & ...
+                         AbstractTestCasesForIndexing
 % Test class for arrow.array.BooleanArray
-
-      properties
+    
+    properties
         ArrowArrayClassName(1, 1) string = "arrow.array.BooleanArray"
         ArrowArrayConstructorFcn = @arrow.array.BooleanArray.fromMATLAB
         MatlabArrayFcn = @logical
         MatlabConversionFcn = @logical
         NullSubstitutionValue = false
         ArrowType = arrow.boolean
+    end
+    
+    properties
+        % Properties required by 'AbstractTestCasesForIndexing'
+        correspondingMATLABArrayForIndexingTests = [true, false, false, true, true, true, false, false, true, true];
+        arrowArrayForIndexingTests = arrow.array.BooleanArray.fromMATLAB([true, false, false, true, true, true, false, false, true, true]);
     end
 
     methods(TestClassSetup)

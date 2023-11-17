@@ -13,7 +13,8 @@
 % implied.  See the License for the specific language governing
 % permissions and limitations under the License.
 
-classdef tStringArray < matlab.unittest.TestCase
+classdef tStringArray < matlab.unittest.TestCase & ...
+                        AbstractTestCasesForIndexing
 % Test class for arrow.array.StringArray
 
       properties
@@ -23,6 +24,13 @@ classdef tStringArray < matlab.unittest.TestCase
         MatlabConversionFcn = @string
         NullSubstitutionValue = string(missing)
         ArrowType = arrow.string
+      end
+
+      properties
+        % Properties required by 'AbstractTestCasesForIndexing'
+        correspondingMATLABArrayForIndexingTests = ["Storm", "", "Sunny", missing, "Snowy", "Heavy Rain", missing, "Cloudy", "", missing];
+        arrowArrayForIndexingTests = arrow.array.StringArray.fromMATLAB(...
+                                                   ["Storm", "", "Sunny", missing, "Snowy", "Heavy Rain", missing, "Cloudy", "", missing]);
     end
 
     methods(TestClassSetup)

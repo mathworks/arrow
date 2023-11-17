@@ -15,10 +15,18 @@
 % implied.  See the License for the specific language governing
 % permissions and limitations under the License.
 
-classdef tTime64Array < matlab.unittest.TestCase
+classdef tTime64Array < matlab.unittest.TestCase & ...
+                        AbstractTestCasesForIndexing
 
     properties
         ArrowArrayConstructorFcn = @arrow.array.Time64Array.fromMATLAB
+    end
+
+    properties
+        % Properties required by 'AbstractTestCasesForIndexing'
+        correspondingMATLABArrayForIndexingTests = seconds([0.000001, NaN, 2.002, NaN, 30, NaN, 4.4, NaN, 5.00005, NaN]);
+        arrowArrayForIndexingTests = arrow.array.Time64Array.fromMATLAB(...
+                                                   seconds([0.000001, NaN, 2.002, NaN, 30, NaN, 4.4, NaN, 5.00005, NaN]));
     end
 
     properties(TestParameter)

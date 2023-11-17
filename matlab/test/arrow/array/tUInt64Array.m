@@ -13,7 +13,8 @@
 % implied.  See the License for the specific language governing
 % permissions and limitations under the License.
 
-classdef tUInt64Array < hNumericArray
+classdef tUInt64Array < hNumericArray & ...
+                       AbstractTestCasesForIndexing
 % Tests for arrow.array.UInt64Array
 
     properties
@@ -25,5 +26,12 @@ classdef tUInt64Array < hNumericArray
         MinValue = intmin("uint64")
         NullSubstitutionValue = uint64(0)
         ArrowType = arrow.uint64
+    end
+
+    properties
+        % Properties required by 'AbstractTestCasesForIndexing'
+        correspondingMATLABArrayForIndexingTests = uint64([0, 0, intmax("uint64"), 1, 123456789, 1e15, intmax("uint64"), -0, 55555, 17]);
+        arrowArrayForIndexingTests = arrow.array.UInt64Array.fromMATLAB(...
+                                                   uint64([0, 0, intmax("uint64"), 1, 123456789, 1e15, intmax("uint64"), -0, 55555, 17]));
     end
 end

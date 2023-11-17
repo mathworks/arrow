@@ -13,7 +13,8 @@
 % implied.  See the License for the specific language governing
 % permissions and limitations under the License.
 
-classdef tInt8Array < hNumericArray
+classdef tInt8Array < hNumericArray & ...
+                      AbstractTestCasesForIndexing
 % Tests for arrow.array.Int8Array
     
     properties
@@ -27,4 +28,10 @@ classdef tInt8Array < hNumericArray
         ArrowType = arrow.int8
     end
 
+    properties
+        % Properties required by 'AbstractTestCasesForIndexing'
+        correspondingMATLABArrayForIndexingTests = int8([0, intmin("int8"), intmax("int8"), 1, 100, intmin("int8"), 0, intmax("int8"), 0, 50]);
+        arrowArrayForIndexingTests = arrow.array.Int8Array.fromMATLAB(...
+                                                   int8([0, intmin("int8"), intmax("int8"), 1, 100, intmin("int8"), 0, intmax("int8"), 0, 50]));
+    end
 end
