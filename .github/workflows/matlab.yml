@@ -75,8 +75,8 @@ jobs:
       - name: Build MATLAB Interface
         shell: cmd
         run: |
-          cmake -S .\matlab -B .\matlab\build -G Ninja -D CMAKE_INSTALL_PREFIX=.\matlab\install -D MATLAB_ADD_INSTALL_DIR_TO_SEARCH_PATH=OFF
-          cmake --build .\matlab\build --config Release --target install
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          bash -c "ci/scripts/matlab_build.sh $(pwd)"
       - name: Run MATLAB Tests
         env:
           # Add the installation directory to the MATLAB Search Path by
