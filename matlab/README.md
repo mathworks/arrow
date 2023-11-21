@@ -450,17 +450,21 @@ Number: double
 ```matlab
 >> arrowSchema
 
-arrowSchema =
+arrowSchema = 
 
-Letter: string
-Number: double
+  Arrow Schema with 2 fields:
+
+    Letter: String | Number: Int8
 
 % Specify the field to extract by its name (i.e. "Letter")
 >> field = arrowSchema.field("Letter")
 
-field =
+field = 
 
-Letter: string
+  Field with properties:
+
+    Name: "Letter"
+    Type: [1×1 arrow.type.StringType]
 ```
 
 ### Arrow `Schema` class
@@ -470,7 +474,7 @@ Letter: string
 ```matlab
 >> letter = arrow.field("Letter", arrow.string())
 
-etter = 
+letter = 
 
   Field with properties:
 
