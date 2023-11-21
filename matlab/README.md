@@ -517,25 +517,25 @@ matlabTable =
 
 >> arrowRecordBatch = arrow.recordBatch(matlabTable)
 
-arrowRecordBatch =
+arrowRecordBatch = 
 
-Letter:   [
-    "A",
-    "B",
-    "C"
-  ]
-Number:   [
-    1,
-    2,
-    3
-  ]
+  Arrow RecordBatch with 3 rows and 2 columns:
+
+    Schema:
+
+        Letter: String | Number: Float64
+
+    First Row:
+
+        "A" | 1
 
 >> arrowSchema = arrowRecordBatch.Schema
 
-arrowSchema =
+arrowSchema = 
 
-Letter: string
-Number: double
+  Arrow Schema with 2 fields:
+
+    Letter: String | Number: Float64
 ```
 
 ### Feather V1
