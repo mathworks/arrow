@@ -75,7 +75,7 @@ jobs:
       - name: Build MATLAB Interface
         shell: cmd
         run: |
-          cmake -S .\matlab -B .\matlab\build -D CMAKE_INSTALL_PREFIX=.\matlab\install -D MATLAB_ADD_INSTALL_DIR_TO_SEARCH_PATH=OFF
+          cmake -S .\matlab -B .\matlab\build -G Ninja -D CMAKE_INSTALL_PREFIX=.\matlab\install -D MATLAB_ADD_INSTALL_DIR_TO_SEARCH_PATH=OFF
           cmake --build .\matlab\build --config Release --target install
       - name: Run MATLAB Tests
         env:
