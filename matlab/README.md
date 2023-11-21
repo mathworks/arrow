@@ -125,11 +125,9 @@ matlabArray =
 
 arrowArray = 
 
-[
-  1,
-  2,
-  3
-]
+  Float64Array with 3 elements and 0 null values:
+
+    1 | 2 | 3
 ```
 
 #### Create a MATLAB `logical` array from an Arrow `BooleanArray`
@@ -139,11 +137,9 @@ arrowArray =
 
 arrowArray = 
 
-[
-  true,
-  false,
-  true
-]
+  BooleanArray with 3 elements and 0 null values:
+
+    true | false | true
 
 >> matlabArray = toMATLAB(arrowArray)
 
@@ -181,13 +177,9 @@ validElements =
 
 arrowArray = 
 
-[
-  122,
-  null,
-  127,
-  null,
-  127
-]
+  Int8Array with 5 elements and 2 null values:
+
+    122 | null | 127 | null | 127
 ```
 
 ### Arrow `RecordBatch` class
