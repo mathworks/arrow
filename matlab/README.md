@@ -252,53 +252,41 @@ matlabTable =
 ```matlab
 >> stringArray = arrow.array(["A", "B", "C"])
 
-stringArray =
+stringArray = 
 
-[
-  "A",
-  "B",
-  "C"
-]
+  StringArray with 3 elements and 0 null values:
+
+    "A" | "B" | "C"
 
 >> timestampArray = arrow.array([datetime(1997, 01, 01), datetime(1998, 01, 01), datetime(1999, 01, 01)])
 
-timestampArray =
+timestampArray = 
 
-[
-  1997-01-01 00:00:00.000000,
-  1998-01-01 00:00:00.000000,
-  1999-01-01 00:00:00.000000
-]
+  TimestampArray with 3 elements and 0 null values:
+
+    1997-01-01 00:00:00.000000 | 1998-01-01 00:00:00.000000 | 1999-01-01 00:00:00.000000
 
 >> booleanArray = arrow.array([true, false, true])
 
-booleanArray =
+booleanArray = 
 
-[
-  true,
-  false,
-  true
-]
+  BooleanArray with 3 elements and 0 null values:
+
+    true | false | true
 
 >> arrowRecordBatch = arrow.tabular.RecordBatch.fromArrays(stringArray, timestampArray, booleanArray)
 
-arrowRecordBatch =
+arrowRecordBatch = 
 
-Column1:   [
-    "A",
-    "B",
-    "C"
-  ]
-Column2:   [
-    1997-01-01 00:00:00.000000,
-    1998-01-01 00:00:00.000000,
-    1999-01-01 00:00:00.000000
-  ]
-Column3:   [
-    true,
-    false,
-    true
-  ]
+  Arrow RecordBatch with 3 rows and 3 columns:
+
+    Schema:
+
+        Column1: String | Column2: Timestamp | Column3: Boolean
+
+    First Row:
+
+        "A" | 1997-01-01 00:00:00.000000 | true
 ```
 
 #### Extract a column from a `RecordBatch` by index
