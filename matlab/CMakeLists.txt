@@ -131,9 +131,6 @@ if(NOT Arrow_FOUND)
   build_arrow()
 endif()
 
-set(MATLAB_ADDITIONAL_VERSIONS "R2023b=23.2")
-set(Matlab_ROOT_DIR "C:/Program Files/MATLAB/R2023b")
-
 # MATLAB is Required
 find_package(Matlab REQUIRED COMPONENTS MAIN_PROGRAM)
 
