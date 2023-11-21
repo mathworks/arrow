@@ -470,22 +470,29 @@ Letter: string
 ```matlab
 >> letter = arrow.field("Letter", arrow.string())
 
-letter =
+etter = 
 
-Letter: string
+  Field with properties:
+
+    Name: "Letter"
+    Type: [1×1 arrow.type.StringType]
 
 >> number = arrow.field("Number", arrow.int8())
 
-number =
+number = 
 
-Number: int8
+  Field with properties:
+
+    Name: "Number"
+    Type: [1×1 arrow.type.Int8Type]
 
 >> schema = arrow.schema([letter, number])
 
-schema =
+schema = 
 
-Letter: string
-Number: int8
+  Arrow Schema with 2 fields:
+
+    Letter: String | Number: Int8
 ```
 
 #### Get the `Schema` of an Arrow `RecordBatch`
