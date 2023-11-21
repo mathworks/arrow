@@ -248,7 +248,6 @@ matlabTable =
 
 #### Create an Arrow `RecordBatch` from multiple Arrow `Array`s
 
-
 ```matlab
 >> stringArray = arrow.array(["A", "B", "C"])
 
@@ -379,9 +378,12 @@ ans =
 ```matlab
 >> field = arrow.field("Number", arrow.int8())
 
-field =
+field = 
 
-Number: int8
+  Field with properties:
+
+    Name: "Number"
+    Type: [1×1 arrow.type.Int8Type]
 
 >> field.Name
 
@@ -396,7 +398,6 @@ ans =
   Int8Type with properties:
 
     ID: Int8
-
 ```
 
 #### Create an Arrow `Field` with type `StringType`
