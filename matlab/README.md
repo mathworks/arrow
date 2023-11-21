@@ -432,10 +432,11 @@ ans =
 ```matlab
 >> arrowSchema
 
-arrowSchema =
+arrowSchema = 
 
-Letter: string
-Number: double
+  Arrow Schema with 2 fields:
+
+    Letter: String | Number: Int8
 
 % Specify the field to extract by its index (i.e. 2)
 >> field = arrowSchema.field(2)
