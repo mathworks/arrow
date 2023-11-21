@@ -202,23 +202,17 @@ matlabTable =
 
 >> arrowRecordBatch = arrow.recordBatch(matlabTable)
 
-arrowRecordBatch =
+arrowRecordBatch = 
 
-Var1:   [
-    "A",
-    "B",
-    "C"
-  ]
-Var2:   [
-    1,
-    2,
-    3
-  ]
-Var3:   [
-    true,
-    false,
-    true
-  ]
+  Arrow RecordBatch with 3 rows and 3 columns:
+
+    Schema:
+
+        Var1: String | Var2: Float64 | Var3: Boolean
+
+    First Row:
+
+        "A" | 1 | true
 ```
 
 #### Create a MATLAB `table` from an Arrow `RecordBatch`
