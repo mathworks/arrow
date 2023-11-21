@@ -405,9 +405,12 @@ ans =
 ```matlab
 >> field = arrow.field("Letter", arrow.string())
 
-field =
+field = 
 
-Letter: string
+  Field with properties:
+
+    Name: "Letter"
+    Type: [1×1 arrow.type.StringType]
 
 >> field.Name
 
