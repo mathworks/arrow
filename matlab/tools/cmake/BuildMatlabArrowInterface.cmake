@@ -48,11 +48,12 @@ function(set_matlab_variables)
   message(STATUS "matlab_release_name = ${matlab_release_name}")
   string(SUBSTRING ${MATLAB_ADDITIONAL_VERSIONS} 0 ${matlab_additional_versions_length} matlab_release_version)
   message(STATUS "matlab_release_version = ${matlab_release_version}")
+  get_filename_component(matlab_root_dir_release ${Matlab_ROOT_DIR} NAME)
+  message(STATUS "matlab_root_dir_release = ${matlab_root_dir_release}")
 
-  if (${Matlab_ROOT_DIR} MATCHES "(\\${matlab_release_name}|/${matlab_release_name})$")
-    message(STATUS "matches!!!")
-  else()
-    message(STATUS "does NOT match")
+  if (NOT ${matlab_root_dir_release} STREQUAL ${matlab_release_name})
+    message(STATUS "Does not match!!!")
+    message(FATAL_ERROR "Unknown MATLAB Release");
   endif()
 
 endfunction()
