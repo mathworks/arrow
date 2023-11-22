@@ -51,7 +51,7 @@ function(set_matlab_variables)
     message(FATAL_ERROR "Unknown MATLAB Release")
   endif()
 
-  set(Matlab_VERSION_STRING "${matlab_release_version}" PARENT_SCOPE)
+  set(Matlab_VERSION_STRING "${matlab_release_version}")
   set(Matlab_ENGINE_LIBRARY "${Matlab_ROOT_DIR}/extern/lib/win64/microsoft/libMatlabEngine.lib" PARENT_SCOPE)
   set(Matlab_DATAARRAY_LIBRARY "${Matlab_ROOT_DIR}/extern/lib/win64/microsoft/libMatlabDataArray.lib" PARENT_SCOPE)
   set(Matlab_MEX_LIBRARY "${Matlab_ROOT_DIR}/extern/lib/win64/microsoft/libmex.lib" PARENT_SCOPE)
