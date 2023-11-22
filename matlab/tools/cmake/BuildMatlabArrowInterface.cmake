@@ -19,6 +19,38 @@
 # Configure libmexclass FetchContent
 # ----------------------------------
 
+
+function print_find_matlab_variables()
+  message(STATUS "Matlab_ROOT_DIR = ${Matlab_ROOT_DIR}")
+  message(STATUS "Matlab_VERSION_STRING = ${Matlab_VERSION_STRING}")
+  message(STATUS "Matlab_MAIN_PROGRAM = ${Matlab_MAIN_PROGRAM}")
+  message(STATUS "Matlab_MX_LIBRARY = ${Matlab_MEX_LIBRARY}")
+  message(STATUS "Matlab_MEX_LIBRARY = ${Matlab_MEX_LIBRARY}")
+  message(STATUS "Matlab_ENG_LIBRARY = ${Matlab_ENG_LIBRARY}")
+  message(STATUS "Matlab_ENGINE_LIBRARY = ${Matlab_ENGINE_LIBRARY}")
+  message(STATUS "Matlab_DATAARRAY_LIBRARY = ${Matlab_DATAARRAY_LIBRARY}")
+  message(STATUS "Matlab_MAT_LIBRARY = ${Matlab_MAT_LIBRARY}")
+  message(STATUS "MEX_API_MACRO = ${MEX_API_MACRO}")  
+  message(STATUS "Matlab_MEX_COMPILER = ${Matlab_MEX_COMPILER}")
+  message(STATUS "Matlab_HAS_CPP_API = ${Matlab_HAS_CPP_API}")
+  message(STATUS "Matlab_MEX_EXTENSION = ${Matlab_MEX_EXTENSION}")
+  message(STATUS "MEX_VERSION_FILE = ${MEX_VERSION_FILE}")
+  message(STATUS "Matlab_INCLUDE_DIRS = ${Matlab_INCLUDE_DIRS}")
+  message(STATUS "Matlab_BINARIES_DIR = ${Matlab_BINARIES_DIR}")
+  message(STATUS "Matlab_EXTERN_LIBRARY_DIR = ${Matlab_EXTERN_LIBRARY_DIR}")
+  message(STATUS "Matlab_EXTERN_BINARIES_DIR = ${Matlab_EXTERN_BINARIES_DIR}")
+endfunction()
+
+function(set_matlab_variables)
+  set(MATLAB)
+endfunction()
+
+set(MATLAB_ADDITIONAL_VERSIONS "R2023b=23.2")
+set(Matlab_ROOT_DIR "C:/Program Files/MATLAB/R2023b")
+message(STATUS "MATLAB_ADDITIONAL_VERSOINS = ${MATLAB_ADDITIONAL_VERSIONS}")
+message(STATUS "Matlab_ROOT_DIR = ${Matlab_ROOT_DIR}")
+find_package(Matlab REQUIRED)
+
 message(STATUS "MATLAB_ADDITIONAL_VERSOINS = ${MATLAB_ADDITIONAL_VERSIONS}")
 message(STATUS "Matlab_ROOT_DIR = ${Matlab_ROOT_DIR}")
 
