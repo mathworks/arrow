@@ -19,8 +19,7 @@
 # Configure libmexclass FetchContent
 # ----------------------------------
 
-
-function print_find_matlab_variables()
+function(print_find_matlab_variables)
   message(STATUS "Matlab_ROOT_DIR = ${Matlab_ROOT_DIR}")
   message(STATUS "Matlab_VERSION_STRING = ${Matlab_VERSION_STRING}")
   message(STATUS "Matlab_MAIN_PROGRAM = ${Matlab_MAIN_PROGRAM}")
