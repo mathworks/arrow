@@ -42,7 +42,9 @@ function print_find_matlab_variables()
 endfunction()
 
 function(set_matlab_variables)
-  set(MATLAB)
+  string(FIND "${MATLAB_ADDITIONAL_VERSIONS}" "=" equal_char_pos)
+  message(STATUS "equal_char_pos = ${equal_char_pos}")
+  
 endfunction()
 
 set(MATLAB_ADDITIONAL_VERSIONS "R2023b=23.2")
@@ -50,6 +52,7 @@ set(Matlab_ROOT_DIR "C:/Program Files/MATLAB/R2023b")
 message(STATUS "MATLAB_ADDITIONAL_VERSOINS = ${MATLAB_ADDITIONAL_VERSIONS}")
 message(STATUS "Matlab_ROOT_DIR = ${Matlab_ROOT_DIR}")
 find_package(Matlab REQUIRED)
+set_matlab_variables()
 
 message(STATUS "MATLAB_ADDITIONAL_VERSOINS = ${MATLAB_ADDITIONAL_VERSIONS}")
 message(STATUS "Matlab_ROOT_DIR = ${Matlab_ROOT_DIR}")
