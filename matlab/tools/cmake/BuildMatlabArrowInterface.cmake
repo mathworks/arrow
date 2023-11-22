@@ -19,9 +19,6 @@
 # Configure libmexclass FetchContent
 # ----------------------------------
 
-set(MATLAB_ADDITIONAL_VERSIONS "R2023b=23.2")
-set(Matlab_ROOT_DIR "C:/Program Files/MATLAB/R2023b")
-
 set(MATLAB_ARROW_LIBMEXCLASS_CLIENT_FETCH_CONTENT_NAME libmexclass)
 # TODO: Consider using SSH URL for the Git Repository when
 # libmexclass is accessible for CI without permission issues.

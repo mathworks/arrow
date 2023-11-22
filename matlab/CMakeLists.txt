@@ -126,16 +126,13 @@ else()
   set(MATLAB_BUILD_OUTPUT_DIR "${CMAKE_BINARY_DIR}")
 endif()
 
+set(MATLAB_ADDITIONAL_VERSIONS "R2023b=23.2")
+set(Matlab_ROOT_DIR "C:/Program Files/MATLAB/R2023b")
+
 find_package(Arrow QUIET)
 if(NOT Arrow_FOUND)
   build_arrow()
 endif()
-
-# MATLAB is Required
-find_package(Matlab REQUIRED COMPONENTS MAIN_PROGRAM)
-
-message(STATUS "Mex Library: ${Matlab_MEX_LIBRARY}")
-message(STATUS "Mex Include Folder: ${Matlab_INCLUDE_DIRS}")
 
 # ARROW_SHARED_LIB
 # On Windows, this will be ARROW_HOME/bin/arrow.dll and on Linux and macOS, it is the arrow.so/dylib in the newly built arrow_shared library.
