@@ -23,7 +23,7 @@ set(MATLAB_ADDITIONAL_VERSIONS "R2023b=23.2")
 set(Matlab_ROOT_DIR "C:/Program Files/MATLAB/R2023b")
 message(STATUS "MATLAB_ADDITIONAL_VERSOINS = ${MATLAB_ADDITIONAL_VERSIONS}")
 message(STATUS "Matlab_ROOT_DIR = ${Matlab_ROOT_DIR}")
-find_package(Matlab REQUIRED COMPONENTS MAIN_PROGRAM)
+find_package(Matlab REQUIRED)
 
 set(MATLAB_ARROW_LIBMEXCLASS_CLIENT_FETCH_CONTENT_NAME libmexclass)
 # TODO: Consider using SSH URL for the Git Repository when
