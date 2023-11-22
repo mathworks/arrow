@@ -47,7 +47,14 @@ function(set_matlab_variables)
   string(SUBSTRING ${MATLAB_ADDITIONAL_VERSIONS} 0 ${equal_char_pos} matlab_release_name)
   message(STATUS "matlab_release_name = ${matlab_release_name}")
   string(SUBSTRING ${MATLAB_ADDITIONAL_VERSIONS} 0 ${matlab_additional_versions_length} matlab_release_version)
-  message(STATUS "matlab_release_version = ${matlab_release_version}")  
+  message(STATUS "matlab_release_version = ${matlab_release_version}")
+
+  if (${Matlab_ROOT_DIR} MATCHES "(\\${matlab_release_name}|/${matlab_release_name})$")
+    message(STATUS "matches!!!")
+  else()
+    message(STATUS "does NOT match")
+  endif()
+
 endfunction()
 
 set(MATLAB_ADDITIONAL_VERSIONS "R2023b=23.2")
