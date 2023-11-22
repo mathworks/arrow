@@ -131,6 +131,12 @@ if(NOT Arrow_FOUND)
   build_arrow()
 endif()
 
+set(MATLAB_ADDITIONAL_VERSIONS "R2023b=23.2")
+set(Matlab_ROOT_DIR "C:/Program Files/MATLAB/R2023b")
+message(STATUS "MATLAB_ADDITIONAL_VERSOINS = ${MATLAB_ADDITIONAL_VERSIONS}")
+message(STATUS "Matlab_ROOT_DIR = ${Matlab_ROOT_DIR}")
+find_package(Matlab REQUIRED)
+
 # ARROW_SHARED_LIB
 # On Windows, this will be ARROW_HOME/bin/arrow.dll and on Linux and macOS, it is the arrow.so/dylib in the newly built arrow_shared library.
 if(NOT Arrow_FOUND)
