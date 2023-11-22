@@ -126,9 +126,6 @@ else()
   set(MATLAB_BUILD_OUTPUT_DIR "${CMAKE_BINARY_DIR}")
 endif()
 
-set(MATLAB_ADDITIONAL_VERSIONS "R2023b=23.2")
-set(Matlab_ROOT_DIR "C:/Program Files/MATLAB/R2023b")
-
 find_package(Arrow QUIET)
 if(NOT Arrow_FOUND)
   build_arrow()
