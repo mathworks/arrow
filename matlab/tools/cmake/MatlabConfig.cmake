@@ -40,6 +40,8 @@ macro(MatlabConfigure)
   find_package(Matlab REQUIRED)
   if (${Matlab_VERSION_STRING} STREQUAL "unknown")
     message(STATUS "Matlab_VERSION_STRING is unknown")
+    message(STATUS "MATLAB_RELEASE_VERSION = {MATLAB_RELEASE_VERSION}")
+
     if (NOT DEFINED MATLAB_RELEASE_VERSION)
       # Temporarily require users to supply MATLAB_RELEASE_VERSION if find_package(Matlab)
       # fails to derive the version from the root directory. We can probably determine this

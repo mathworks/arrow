@@ -30,6 +30,6 @@ cmake \
   -B ${build_dir} \
   -G Ninja \
   -D CMAKE_INSTALL_PREFIX=${install_dir} \
-  -D MATLAB_ADD_INSTALL_DIR_TO_SEARCH_PATH=OFF
+  -D MATLAB_ADD_INSTALL_DIR_TO_SEARCH_PATH=OFF \
   -D MATLAB_RELEASE_VERSION=23.2
 cmake --build ${build_dir} --config Release --target install
