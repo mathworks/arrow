@@ -41,9 +41,13 @@ function(print_find_matlab_variables)
 endfunction()
 
 function(set_matlab_variables)
+  string(LENGTH ${MATLAB_ADDITIONAL_VERSIONS} matlab_additional_versions_length)
   string(FIND "${MATLAB_ADDITIONAL_VERSIONS}" "=" equal_char_pos)
   message(STATUS "equal_char_pos = ${equal_char_pos}")
-  
+  string(SUBSTRING ${MATLAB_ADDITIONAL_VERSIONS} 0 ${equal_char_pos} matlab_release_name)
+  message(STATUS "matlab_release_name = ${matlab_release_name}")
+  string(SUBSTRING ${MATLAB_ADDITIONAL_VERSIONS} 0 ${matlab_additional_versions_length} matlab_release_version)
+  message(STATUS "matlab_release_version = ${matlab_release_version}")  
 endfunction()
 
 set(MATLAB_ADDITIONAL_VERSIONS "R2023b=23.2")
