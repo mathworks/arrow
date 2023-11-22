@@ -53,7 +53,7 @@ function(set_matlab_variables)
 
   if (NOT ${matlab_root_dir_release} STREQUAL ${matlab_release_name})
     message(STATUS "Does not match!!!")
-    message(FATAL_ERROR "Unknown MATLAB Release");
+    message(FATAL_ERROR "Unknown MATLAB Release")
   endif()
 
 endfunction()
