@@ -31,4 +31,4 @@ cmake \
   -G Ninja \
   -D CMAKE_INSTALL_PREFIX=${install_dir} \
   -D MATLAB_ADD_INSTALL_DIR_TO_SEARCH_PATH=OFF
-cmake --build ${build_dir} --config Release --target install
+cmake --build ${build_dir} --config Release --target install --verbose
