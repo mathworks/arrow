@@ -189,7 +189,7 @@ Create the Release Candidate branch from the updated maintenance branch
     # so for the first RC this would be: dev/release/01-prepare.sh 4.0.0 5.0.0 0
     dev/release/01-prepare.sh <version> <next-version> <rc-number>
     
-    # Push the release tag (for RC1 or later the --force flag is required)
+    # Push the release candidate tag (for RC1 or later the --force flag is required)
     git push -u apache apache-arrow-<version>rc<rc-number>
     # Push the release candidate branch in order to trigger verification jobs later
     git push -u apache release-<version>-rc<rc-number>
