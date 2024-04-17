@@ -74,16 +74,16 @@ if [ ${UPLOAD_FORCE_SIGN} -gt 0 ]; then
   rm -rf ${mltbx_checksum_sha512}
 
   # Sign the MLTBX file and create a detached (--deatch-sign) ASCII armor (--armor) GPG signature file.
-  gpg --detach-sign --local-user "${GPG_KEY_ID}" --armor ${mltbx_file}
+  gpg --detach-sign --armor ${mltbx_file}
 
   # Compute the SHA512 checksum of the MLTBX file.
   shasum --algorithm 512 ${mltbx_file} > ${mltbx_checksum_sha512}
 fi
 
-tag="apache-arrow-${version_with_rc}"
+tag="test-apache-arrow-${version_with_rc}"
 gh release upload ${tag} \
   --clobber \
-  --repo apache/arrow \
+  --repo mathworks/arrow \
   *
 
 popd

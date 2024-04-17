@@ -29,8 +29,8 @@ fi
 version=$1
 rc=$2
 
-tag=apache-arrow-${version}-rc${rc}
-tarball=apache-arrow-${version}.tar.gz
+tag=test-apache-arrow-${version}-rc${rc}
+tarball=test-apache-arrow-${version}.tar.gz
 
 : ${release_hash:=$(git rev-list --max-count=1 ${tag})}
 
@@ -53,7 +53,7 @@ dummy_git=${tag}/csharp/dummy.git
 mkdir ${dummy_git}
 pushd ${dummy_git}
 echo ${release_hash} > HEAD
-echo '[remote "origin"] url = https://github.com/apache/arrow.git' >> config
+echo '[remote "origin"] url = https://github.com/mathworks/arrow.git' >> config
 mkdir objects refs
 popd 
 

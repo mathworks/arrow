@@ -22,7 +22,7 @@ on:
     tags:
       # Trigger workflow when a tag whose name matches the pattern
       # pattern "apache-arrow-{MAJOR}.{MINOR}.{PATCH}" is pushed.
-      - "apache-arrow-[0-9]+.[0-9]+.[0-9]+"
+      - "test-apache-arrow-[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
   contents: write
@@ -50,7 +50,7 @@ jobs:
           echo "RELEASE_CANDIDATE_TAG_NAME=${rc_tag}" >> ${GITHUB_ENV}
       - name: Store Version and Release Candidate Number
         run: |
-          version_with_rc=${RELEASE_CANDIDATE_TAG_NAME#apache-arrow-}
+          version_with_rc=${RELEASE_CANDIDATE_TAG_NAME#test-apache-arrow-}
           version=${version_with_rc%-rc*}
           rc_num=${version_with_rc#${version}-rc}
           echo "VERSION_WITH_RC=${version_with_rc}" >> ${GITHUB_ENV}
@@ -62,7 +62,7 @@ jobs:
           gh release download ${RELEASE_CANDIDATE_TAG_NAME} --dir release_candidate_artifacts
       - name: Create Release Title
         run: |
-          title="Apache Arrow ${VERSION}"
+          title="TEST Apache Arrow ${VERSION}"
           echo "RELEASE_TITLE=${title}" >> ${GITHUB_ENV}
       - name: Create Release Notes
         run: |
