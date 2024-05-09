@@ -195,6 +195,7 @@ void Array::exportToC(libmexclass::proxy::method::Context& context) {
   mda::StructArray output = factory.createStructArray({1, 1}, {"ArrowArrayAddress", "ArrowSchemaAddress"});
   output[0]["ArrowArrayAddress"] = factory.createScalar(reinterpret_cast<uint64_t>(arrow_array));
   output[0]["ArrowSchemaAddress"] = factory.createScalar(reinterpret_cast<uint64_t>(arrow_schema));
+  context.outputs[0] = output;
 }
 
 }  // namespace arrow::matlab::array::proxy
