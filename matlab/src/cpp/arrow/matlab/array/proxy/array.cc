@@ -16,6 +16,7 @@
 // under the License.
 
 #include "arrow/util/utf8.h"
+#include "arrow/c/bridge.h"
 
 #include "arrow/matlab/array/proxy/array.h"
 #include "arrow/matlab/array/proxy/wrap.h"
@@ -28,6 +29,7 @@
 
 #include "libmexclass/proxy/ProxyManager.h"
 
+#include <memory>
 #include <sstream>
 
 namespace arrow::matlab::array::proxy {
@@ -40,6 +42,7 @@ Array::Array(std::shared_ptr<arrow::Array> array) : array{std::move(array)} {
   REGISTER_METHOD(Array, getType);
   REGISTER_METHOD(Array, isEqual);
   REGISTER_METHOD(Array, slice);
+  REGISTER_METHOD(Array, exportToC);
 }
 
 std::shared_ptr<arrow::Array> Array::unwrap() { return array; }
@@ -178,4 +181,20 @@ void Array::slice(libmexclass::proxy::method::Context& context) {
   output[0]["TypeID"] = factory.createScalar(type_id);
   context.outputs[0] = output;
 }
+
+void Array::exportToC(libmexclass::proxy::method::Context& context) {
+  namespace mda = ::matlab::data;
+
+  struct ArrowArray* arrow_array = new ArrowArray();
+  struct ArrowSchema* arrow_schema = new ArrowSchema();
+
+  MATLAB_ERROR_IF_NOT_OK_WITH_CONTEXT(
+    arrow::ExportArray(*array, arrow_array, arrow_schema), context, "arrow:cdata:error");
+
+  mda::ArrayFactory factory;
+  mda::StructArray output = factory.createStructArray({1, 1}, {"ArrowArrayAddress", "ArrowSchemaAddress"});
+  output[0]["ArrowArrayAddress"] = factory.createScalar(reinterpret_cast<uint64_t>(arrow_array));
+  output[0]["ArrowSchemaAddress"] = factory.createScalar(reinterpret_cast<uint64_t>(arrow_schema));
+}
+
 }  // namespace arrow::matlab::array::proxy
