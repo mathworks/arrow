@@ -17,7 +17,7 @@
 
 function [arrowArrayAddress, arrowSchemaAddress] = export(array)
     arguments
-        array(1, 1) {arrow.array.Array}
+        array(1, 1) arrow.array.Array
     end
     addresses = array.exportToC();
     arrowArrayAddress = addresses.ArrowArrayAddress;
