@@ -21,6 +21,8 @@ function array = import(arrowArrayAddress, arrowSchemaAddress)
         arrowSchemaAddress(1, 1) uint64
     end
 
-    
+    importer = arrow.c.internal.ArrayImporter();
+    array = importer.import(arrowArrayAddress, arrowSchemaAddress);
+   
 end
 

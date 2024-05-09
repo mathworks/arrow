@@ -23,8 +23,8 @@ classdef ArrayImporter
 
     methods
         function obj = ArrayImporter()
-            proxyName = "arrow.tabular.proxy.RecordBatch";
-            proxy = arrow.internal.proxy.create(proxyName);
+            proxyName = "arrow.c.proxy.ArrayImporter";
+            proxy = arrow.internal.proxy.create(proxyName, struct());
             obj.Proxy = proxy;
         end
 
