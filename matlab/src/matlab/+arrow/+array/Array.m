@@ -107,5 +107,9 @@ classdef (Abstract) Array < matlab.mixin.CustomDisplay & ...
             proxy = libmexclass.proxy.Proxy(Name=traits.ArrayProxyClassName, ID=arrayStruct.ProxyID);
             array = traits.ArrayConstructor(proxy);
         end
+
+        function addresses = exportToC(obj)
+            addresses = obj.Proxy.exportToC();
+        end
     end
 end
