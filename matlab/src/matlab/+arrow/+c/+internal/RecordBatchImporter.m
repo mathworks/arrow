@@ -29,7 +29,7 @@ classdef RecordBatchImporter
 
         function recordBatch = import(obj, cArray, cSchema)
             arguments
-                obj(1, 1) arrow.c.internal.ArrayImporter
+                obj(1, 1) arrow.c.internal.RecordBatchImporter
                 cArray(1, 1) arrow.c.ArrayCStruct
                 cSchema(1, 1) arrow.c.SchemaCStruct
             end
