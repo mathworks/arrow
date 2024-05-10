@@ -27,6 +27,7 @@
 #include "arrow/matlab/buffer/proxy/buffer.h"
 #include "arrow/matlab/c/proxy/array_c_struct.h"
 #include "arrow/matlab/c/proxy/array_importer.h"
+#include "arrow/matlab/c/proxy/record_batch_importer.h"
 #include "arrow/matlab/c/proxy/schema_c_struct.h"
 #include "arrow/matlab/error/error.h"
 #include "arrow/matlab/io/csv/proxy/table_reader.h"
@@ -106,6 +107,7 @@ libmexclass::proxy::MakeResult Factory::make_proxy(
   REGISTER_PROXY(arrow.c.proxy.ArrayCStruct       , arrow::matlab::c::proxy::ArrayCStruct);
   REGISTER_PROXY(arrow.c.proxy.SchemaCStruct      , arrow::matlab::c::proxy::SchemaCStruct);
   REGISTER_PROXY(arrow.c.proxy.ArrayImporter      , arrow::matlab::c::proxy::ArrayImporter);
+  REGISTER_PROXY(arrow.c.proxy.RecordBatchImporter, arrow::matlab::c::proxy::RecordBatchImporter);
   // clang-format on
   return libmexclass::error::Error{error::UNKNOWN_PROXY_ERROR_ID,
                                    "Did not find matching C++ proxy for " + class_name};

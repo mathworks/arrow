@@ -78,7 +78,8 @@ set(MATLAB_ARROW_LIBMEXCLASS_CLIENT_PROXY_SOURCES "${CMAKE_SOURCE_DIR}/src/cpp/a
                                                   "${CMAKE_SOURCE_DIR}/src/cpp/arrow/matlab/buffer/proxy/buffer.cc"
                                                   "${CMAKE_SOURCE_DIR}/src/cpp/arrow/matlab/c/proxy/array_c_struct.cc"
                                                   "${CMAKE_SOURCE_DIR}/src/cpp/arrow/matlab/c/proxy/schema_c_struct.cc"
-                                                  "${CMAKE_SOURCE_DIR}/src/cpp/arrow/matlab/c/proxy/array_importer.cc")
+                                                  "${CMAKE_SOURCE_DIR}/src/cpp/arrow/matlab/c/proxy/array_importer.cc"
+                                                  "${CMAKE_SOURCE_DIR}/src/cpp/arrow/matlab/c/proxy/record_batch_importer.cc")
 
 
 set(MATLAB_ARROW_LIBMEXCLASS_CLIENT_PROXY_FACTORY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/src/cpp/arrow/matlab/proxy")
