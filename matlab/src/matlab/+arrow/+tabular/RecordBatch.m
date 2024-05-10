@@ -144,8 +144,15 @@ classdef RecordBatch < matlab.mixin.CustomDisplay & ...
     end
 
     methods(Hidden)
-        function exportToC(cArrayAddress, cSchemaAddress)
-            obj.Proxy.exportToC(cArrayAddress, cSchemaAddress);
+        function exportToC(obj, cArrayAddress, cSchemaAddress)
+            arguments
+                obj(1, 1) arrow.tabular.RecordBatch
+                cArrayAddress(1, 1) uint64
+                cSchemaAddress(1, 1) uint64
+            end
+            args = struct(ArrowArrayAddress=cArrayAddress,...
+                ArrowSchemaAddress=cSchemaAddress);
+            obj.Proxy.exportToC(args);
         end
     end
 end
