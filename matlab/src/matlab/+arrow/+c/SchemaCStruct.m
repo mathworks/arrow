@@ -25,9 +25,8 @@ classdef SchemaCStruct
         Address(1, 1) uint64
     end
 
-
     methods
-        function obj = ArrayCStruct()
+        function obj = SchemaCStruct()
             proxyName = "arrow.c.proxy.SchemaCStruct";
             obj.Proxy = arrow.internal.proxy.create(proxyName);
         end

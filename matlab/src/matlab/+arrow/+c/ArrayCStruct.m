@@ -25,7 +25,6 @@ classdef ArrayCStruct
         Address(1, 1) uint64
     end
 
-
     methods
         function obj = ArrayCStruct()
             proxyName = "arrow.c.proxy.ArrayCStruct";
