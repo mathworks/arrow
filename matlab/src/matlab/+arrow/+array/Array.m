@@ -119,4 +119,11 @@ classdef (Abstract) Array < matlab.mixin.CustomDisplay & ...
             obj.Proxy.exportToC(args);
         end
     end
+
+    methods(Static)
+        function array = importFromC(cArray, cSchema)
+            importer = arrow.c.internal.ArrayImporter();
+            array = importer.import(cArray, cSchema);
+        end
+    end
 end
