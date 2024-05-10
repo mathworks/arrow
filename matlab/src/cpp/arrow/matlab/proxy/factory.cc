@@ -103,7 +103,7 @@ libmexclass::proxy::MakeResult Factory::make_proxy(
   REGISTER_PROXY(arrow.io.csv.proxy.TableWriter   , arrow::matlab::io::csv::proxy::TableWriter);
   REGISTER_PROXY(arrow.io.csv.proxy.TableReader   , arrow::matlab::io::csv::proxy::TableReader);
   REGISTER_PROXY(arrow.c.proxy.ArrayCStruct       , arrow::matlab::c::proxy::ArrayCStruct);
-  REGISTER_PROXY(arrow.c.proxy.arrow.SchemaCStruct, arrow::matlab::c::proxy::SchemaCStruct);
+  REGISTER_PROXY(arrow.c.proxy.SchemaCStruct, arrow::matlab::c::proxy::SchemaCStruct);
   // clang-format on
   return libmexclass::error::Error{error::UNKNOWN_PROXY_ERROR_ID,
                                    "Did not find matching C++ proxy for " + class_name};
