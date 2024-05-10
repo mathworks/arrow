@@ -17,6 +17,8 @@
 
 #include "arrow/util/utf8.h"
 
+#include "arrow/c/bridge.h"
+
 #include "arrow/matlab/array/proxy/array.h"
 #include "arrow/matlab/array/proxy/wrap.h"
 #include "arrow/matlab/bit/unpack.h"
@@ -178,4 +180,19 @@ void Array::slice(libmexclass::proxy::method::Context& context) {
   output[0]["TypeID"] = factory.createScalar(type_id);
   context.outputs[0] = output;
 }
+
+void Array::exportToC(libmexclass::proxy::method::Context& context) {
+  namespace mda = ::matlab::data;
+  mda::StructArray opts = context.inputs[0];
+  const mda::TypedArray<uint64_t> array_address_mda = opts[0]["ArrowArrayAddress"];
+  const mda::TypedArray<uint64_t> schema_address_mda = opts[0]["ArrowSchemaAddress"];
+
+  struct ArrowArray* arrow_array = reinterpret_cast<struct ArrowArray*>(uint64_t(array_address_mda[0]));
+  struct ArrowSchema* arrow_schema = reinterpret_cast<struct ArrowSchema*>(uint64_t(schema_address_mda[0]));
+
+  MATLAB_ERROR_IF_NOT_OK_WITH_CONTEXT(arrow::ExportArray(*array, arrow_array, arrow_schema), context, "arrow:c:export:Failed");
+
+}
+
+
 }  // namespace arrow::matlab::array::proxy
