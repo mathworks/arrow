@@ -19,11 +19,6 @@ name: MATLAB
 
 on:
   push:
-    paths:
-      - '.github/workflows/matlab.yml'
-      - 'ci/scripts/matlab*.sh'
-      - 'matlab/**'
-      - 'cpp/src/arrow/**'
   pull_request:
     paths:
       - '.github/workflows/matlab.yml'
