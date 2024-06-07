@@ -67,10 +67,10 @@ jobs:
         run: ./install/crash-repro/write-feather testfile.feather
 
   windows:
-    name: AMD64 Windows 2022 MATLAB
+    name:  AMD64 Windows 2022
     runs-on: windows-2022
     steps:
-      - name: Check out repository        
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -79,6 +79,7 @@ jobs:
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
           bash -c "ci/scripts/crash_repro.sh $(pwd)"
-       - name: Run Repro Script
+      - name: Run Repro Script
+        shell: cmd
         run: |
           bash -c "install/crash_repro/write_feather testfile.feather"
