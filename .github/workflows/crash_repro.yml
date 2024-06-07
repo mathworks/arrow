@@ -42,7 +42,7 @@ jobs:
       - name: Build Crash Executable
         run: ci/scripts/crash_repro.sh $(pwd)
       - name: Run Repro Script
-        run: ./crash-repro/install/write-feather testfile.feather
+        run: ./crash-repro/install/write_feather testfile.feather
 
   macos:
     name: ${{ matrix.architecture }} macOS ${{ matrix.macos-version }} MATLAB
@@ -64,7 +64,7 @@ jobs:
       - name: Build Crash Executable
         run: ci/scripts/crash_repro.sh $(pwd)
       - name: Run Repro Script
-        run: ./crash-repro/install/write-feather testfile.feather
+        run: ./crash-repro/install/write_feather testfile.feather
 
   windows:
     name:  AMD64 Windows 2022
