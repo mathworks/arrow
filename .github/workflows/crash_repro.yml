@@ -82,4 +82,4 @@ jobs:
       - name: Run Repro Script
         shell: cmd
         run: |
-          crash-repro/install/write_feather testfile.feather
+          cd crash-repro/install && write_feather.exe testfile.feather
