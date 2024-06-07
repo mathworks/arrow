@@ -79,8 +79,8 @@ int main(int argc, char* argv[]) {
 
   auto write_status = write_feather_file(table, filename);
   
-  int exit_value = write_status.ok() ? 1 : 0;
-  if (exit_value) {
+  int exit_value = write_status.ok() ? 0 : 1;
+  if (exit_value == 0) {
     std::cout << "Write Succeeded!!" << std::endl;
   } else {
     std::cout << "Write failed :(" << std::endl;
