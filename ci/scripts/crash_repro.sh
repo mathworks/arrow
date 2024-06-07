@@ -29,5 +29,5 @@ cmake \
   -S ${source_dir} \
   -B ${build_dir} \
   -G Ninja \
-  -D CMAKE_INSTALL_PREFIX=${install_dir} \
+  -D CMAKE_INSTALL_PREFIX=${install_dir}
 cmake --build ${build_dir} --config Release --target install
