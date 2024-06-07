@@ -47,7 +47,6 @@ jobs:
   macos:
     name: ${{ matrix.architecture }} macOS ${{ matrix.macos-version }} MATLAB
     runs-on: macos-${{ matrix.macos-version }}
-    if: ${{ !contains(github.event.pull_request.title, 'WIP') }}
     strategy:
       matrix:
         include:
@@ -70,7 +69,6 @@ jobs:
   windows:
     name: AMD64 Windows 2022 MATLAB
     runs-on: windows-2022
-    if: ${{ !contains(github.event.pull_request.title, 'WIP') }}
     steps:
       - name: Check out repository        
         uses: actions/checkout@v4
