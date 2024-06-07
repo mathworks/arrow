@@ -1,0 +1,86 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Crash Investigation
+
+on:
+  push:
+  
+concurrency:
+  group: ${{ github.repository }}-${{ github.head_ref || github.sha }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+
+  ubuntu:
+    name: AMD64 Ubuntu 20.04 MATLAB
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install ninja-build
+        run: sudo apt-get install ninja-build
+      - name: Build Crash Executable
+        run: ci/scripts/crash_repro.sh $(pwd)
+      - name: Run Repro Script
+        run: ./install/crash-repro/write-feather testfile.feather
+
+  macos:
+    name: ${{ matrix.architecture }} macOS ${{ matrix.macos-version }} MATLAB
+    runs-on: macos-${{ matrix.macos-version }}
+    if: ${{ !contains(github.event.pull_request.title, 'WIP') }}
+    strategy:
+      matrix:
+        include:
+            - architecture: AMD64
+              macos-version: "12"
+            - architecture: ARM64
+              macos-version: "14"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install ninja-build
+        run: brew install ninja
+      - name: Build Crash Executable
+        run: ci/scripts/crash_repro.sh $(pwd)
+      - name: Run Repro Script
+        run: ./install/crash-repro/write-feather testfile.feather
+
+  windows:
+    name: AMD64 Windows 2022 MATLAB
+    runs-on: windows-2022
+    if: ${{ !contains(github.event.pull_request.title, 'WIP') }}
+    steps:
+      - name: Check out repository        
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build Crash Executable
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          bash -c "ci/scripts/crash_repro.sh $(pwd)"
+       - name: Run Repro Script
+        run: |
+          bash -c "install/crash_repro/write_feather testfile.feather"
