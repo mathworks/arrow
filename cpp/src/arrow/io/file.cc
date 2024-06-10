@@ -31,6 +31,8 @@
 #include <unistd.h>  // IWYU pragma: keep
 #endif
 
+#include <iostream>
+
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
@@ -751,7 +753,9 @@ Status MemoryMappedFile::WriteAt(int64_t position, const void* data, int64_t nby
 
 Status MemoryMappedFile::Write(const void* data, int64_t nbytes) {
   RETURN_NOT_OK(memory_map_->CheckClosed());
+  std::cout << "Get lock" << std::endl;
   std::lock_guard<std::mutex> guard(memory_map_->write_lock());
+  std::cout << "locked" << std::endl;
 
   if (!memory_map_->opened() || !memory_map_->writable()) {
     return Status::IOError("Unable to write");
