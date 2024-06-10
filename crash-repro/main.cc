@@ -45,8 +45,12 @@ arrow::Result<std::shared_ptr<arrow::Array>> make_numeric_array(std::vector<CTyp
 arrow::Result<std::shared_ptr<arrow::Table>> make_table() {
   std::vector<double> doubleValues = {1.0, 2.0, 3.0, 4.0};
   std::vector<int32_t> int32Values = {1, 2, 3, 4};
+  std::cout << "1" << std::endl1;
   ARROW_ASSIGN_OR_RAISE(auto doubleArray, make_numeric_array(doubleValues));
+   std::cout << "2" << std::endl1;
+
   ARROW_ASSIGN_OR_RAISE(auto int32Array, make_numeric_array(int32Values));
+  std::cout << "3" << std::endl1;
 
   std::vector<std::shared_ptr<arrow::Array>> columns = {doubleArray, int32Array};
   auto tableSchema = arrow::schema({arrow::field("A", doubleArray->type()), arrow::field("B", int32Array->type())});
@@ -72,8 +76,12 @@ int main(int argc, char* argv[]) {
   std::string filename{argv[1]};
   std::cout << "Filename is " << filename << std::endl;
 
-  // auto maybe_table = make_table();
-  // if (!maybe_table.ok()) { return 1; }
+  auto maybe_table = make_table();
+    std::cout << "4" << std::endl1;
+
+  if (!maybe_table.ok()) { return 1; }
+    std::cout << "5" << std::endl1;
+
   // auto table = maybe_table.ValueOrDie();
   // std::cout << table->ToString() << std::endl;
   return 0;
