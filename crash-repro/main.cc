@@ -70,13 +70,12 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   std::string filename{argv[1]};
-  std::cout << filename << std::endl;
+  std::cout << "Filename is " << filename << std::endl;
 
-  
-  auto maybe_table = make_table();
-  if (!maybe_table.ok()) { return 1; }
-  auto table = maybe_table.ValueOrDie();
-  std::cout << table->ToString() << std::endl;
+  // auto maybe_table = make_table();
+  // if (!maybe_table.ok()) { return 1; }
+  // auto table = maybe_table.ValueOrDie();
+  // std::cout << table->ToString() << std::endl;
   return 0;
 
   // auto write_status = write_feather_file(table, filename);
