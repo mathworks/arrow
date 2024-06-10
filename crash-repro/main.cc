@@ -76,14 +76,16 @@ int main(int argc, char* argv[]) {
   auto maybe_table = make_table();
   if (!maybe_table.ok()) { return 1; }
   auto table = maybe_table.ValueOrDie();
-
-  auto write_status = write_feather_file(table, filename);
+  std::cout << table->ToString() << std::endl;
+  return 0;
   
-  int exit_value = write_status.ok() ? 0 : 1;
-  if (exit_value == 0) {
-    std::cout << "Write Succeeded!!" << std::endl;
-  } else {
-    std::cout << "Write failed :(" << std::endl;
-  }
+  // auto write_status = write_feather_file(table, filename);
+  
+  // int exit_value = write_status.ok() ? 0 : 1;
+  // if (exit_value == 0) {
+  //   std::cout << "Write Succeeded!!" << std::endl;
+  // } else {
+  //   std::cout << "Write failed :(" << std::endl;
+  // }
   return exit_value;
 }	
