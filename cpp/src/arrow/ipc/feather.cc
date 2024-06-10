@@ -26,6 +26,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include <flatbuffers/flatbuffers.h>
 
@@ -674,12 +675,16 @@ Status WriteFeatherV1(const Table& table, io::OutputStream* dst) {
   std::vector<flatbuffers::Offset<fbs::Column>> fb_columns;
   for (int i = 0; i < table.num_columns(); ++i) {
     ColumnMetadata col;
+    std::cout << "Writing column " << std::to_string(i) << " ..." << std::endl;
     RETURN_NOT_OK(WriteColumnV1(*table.column(i), dst, &col));
+    std::cout << "Done with column: " << std::to_string(i) << std::endl;
     auto fb_column = fbs::CreateColumn(
         fbb, fbb.CreateString(table.field(i)->name()), GetPrimitiveArray(fbb, col.values),
         ToFlatbufferEnum(col.meta_type), col.WriteMetadata(fbb),
         /*user_metadata=*/0);
     fb_columns.push_back(fb_column);
+    std::cout << "pushed back fb " << std::to_string(i) << std::endl;
+    std::cout << "" << std::endl;
   }
 
   // Finalize file footer

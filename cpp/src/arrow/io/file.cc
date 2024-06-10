@@ -44,6 +44,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <iostream>
 
 // ----------------------------------------------------------------------
 // Other Arrow includes
@@ -360,6 +361,7 @@ FileOutputStream::~FileOutputStream() { internal::CloseFromDestructor(this); }
 
 Result<std::shared_ptr<FileOutputStream>> FileOutputStream::Open(const std::string& path,
                                                                  bool append) {
+  std::cout << "hello there" << std::endl;
   auto stream = std::shared_ptr<FileOutputStream>(new FileOutputStream());
   RETURN_NOT_OK(stream->impl_->Open(path, append));
   return stream;
