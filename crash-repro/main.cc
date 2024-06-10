@@ -78,7 +78,7 @@ int main(int argc, char* argv[]) {
   auto table = maybe_table.ValueOrDie();
   std::cout << table->ToString() << std::endl;
   return 0;
-  
+
   // auto write_status = write_feather_file(table, filename);
   
   // int exit_value = write_status.ok() ? 0 : 1;
@@ -87,5 +87,5 @@ int main(int argc, char* argv[]) {
   // } else {
   //   std::cout << "Write failed :(" << std::endl;
   // }
-  return exit_value;
+  // return exit_value;
 }	
