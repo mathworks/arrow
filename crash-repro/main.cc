@@ -48,14 +48,12 @@ arrow::Result<std::shared_ptr<arrow::Table>> make_table() {
   std::cout << "1" << std::endl;
   auto maybeDoubleArray = make_numeric_array(doubleValues);
   if (!maybeDoubleArray.ok()) {
-    std::cout << "Status is : " << maybeDoubleArray.status().mesage() << std::endl;
+    std::cout << "Status is : " << maybeDoubleArray.status().message() << std::endl;
   }
 
   ARROW_ASSIGN_OR_RAISE(auto doubleArray, maybeDoubleArray);
 
-  std::cout << "after " << std::endl;
-  ARROW_ASSIGN_OR_RAISE(auto doubleArray, make_numeric_array(doubleValues));
-   std::cout << "2" << std::endl;
+  std::cout << "2" << std::endl;
 
   ARROW_ASSIGN_OR_RAISE(auto int32Array, make_numeric_array(int32Values));
   std::cout << "3" << std::endl;
