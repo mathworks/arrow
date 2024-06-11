@@ -48,7 +48,7 @@ arrow::Result<std::shared_ptr<arrow::Array>> make_numeric_array(std::vector<CTyp
 }
 
 arrow::Result<std::shared_ptr<arrow::Table>> make_table() {
-  std::vector<double> doubleValues = {1.0, 2.0, 3.0, 4.0};
+  std::vector<int32_t> doubleValues = {1, 2, 3, 4};
   std::vector<int32_t> int32Values = {1, 2, 3, 4};
   std::cout << "1" << std::endl;
   auto maybeDoubleArray = make_numeric_array(doubleValues);
