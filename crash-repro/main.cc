@@ -50,6 +50,8 @@ arrow::Result<std::shared_ptr<arrow::Table>> make_table() {
   if (!maybeDoubleArray.ok()) {
     std::cout << "Status is : " << maybeDoubleArray.status().message() << std::endl;
   }
+    std::cout << "after check" << std::endl;
+
 
   ARROW_ASSIGN_OR_RAISE(auto doubleArray, maybeDoubleArray);
 
