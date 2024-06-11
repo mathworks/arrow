@@ -32,12 +32,17 @@ template <typename CType>
 arrow::Result<std::shared_ptr<arrow::Array>> make_numeric_array(std::vector<CType> values) {
   using TypeClass = typename arrow::CTypeTraits<CType>::ArrowType;
   
+    std::cout << "create builder" << std::endl;
+
   arrow::NumericBuilder<TypeClass> builder;
+    std::cout << "append values" << std::endl;
 
   ARROW_RETURN_NOT_OK(builder.AppendValues(values));
+    std::cout << "done values" << std::endl;
 
   std::shared_ptr<arrow::Array> array;
   ARROW_RETURN_NOT_OK(builder.Finish(&array)); 
+    std::cout << "finish" << std::endl;
 
   return array;
 }
