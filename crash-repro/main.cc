@@ -29,13 +29,13 @@
 
 
 template <typename CType>
-arrow::Result<std::shared_ptr<arrow::Array>> make_numeric_array(std::vector<CType> values) {
+arrow::Result<std::shared_ptr<arrow::Array>> make_numeric_array() { //std::vector<CType> values) {
   using TypeClass = typename arrow::CTypeTraits<CType>::ArrowType;
-  
-    std::cout << "create builder" << std::endl;
+  std::vector<CType> values = {1, 2, 3};
+  std::cout << "create builder" << std::endl;
 
   arrow::NumericBuilder<TypeClass> builder;
-    std::cout << "append values" << std::endl;
+  std::cout << "append values" << std::endl;
 
   ARROW_RETURN_NOT_OK(builder.AppendValues(values));
     std::cout << "done values" << std::endl;
@@ -48,10 +48,10 @@ arrow::Result<std::shared_ptr<arrow::Array>> make_numeric_array(std::vector<CTyp
 }
 
 arrow::Result<std::shared_ptr<arrow::Table>> make_table() {
-  std::vector<int32_t> doubleValues = {1, 2, 3, 4};
-  std::vector<int32_t> int32Values = {1, 2, 3, 4};
+  //std::vector<int32_t> doubleValues = {1, 2, 3, 4};
+  st//d::vector<int32_t> int32Values = {1, 2, 3, 4};
   std::cout << "1" << std::endl;
-  auto maybeDoubleArray = make_numeric_array(doubleValues);
+  auto maybeDoubleArray = make_numeric_array<double>(); //doubleValues);
   if (!maybeDoubleArray.ok()) {
     std::cout << "Status is : " << maybeDoubleArray.status().message() << std::endl;
   }
@@ -62,7 +62,7 @@ arrow::Result<std::shared_ptr<arrow::Table>> make_table() {
 
   std::cout << "2" << std::endl;
 
-  ARROW_ASSIGN_OR_RAISE(auto int32Array, make_numeric_array(int32Values));
+  ARROW_ASSIGN_OR_RAISE(auto int32Array, make_numeric_array()); //int32Values));
   std::cout << "3" << std::endl;
 
   std::vector<std::shared_ptr<arrow::Array>> columns = {doubleArray, int32Array};
