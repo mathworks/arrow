@@ -186,7 +186,7 @@ jobs:
       - name: Run MATLAB Tests
         env:
           # Add the installation directory to the MATLAB Search Path by
-          # setting the MATLABPATH environment variable.
+          # setting the MATLABPATH environment variable..
           MATLABPATH: matlab/install/arrow_matlab
         uses: matlab-actions/run-tests@v2
         with:
