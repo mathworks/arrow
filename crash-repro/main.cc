@@ -62,7 +62,7 @@ arrow::Result<std::shared_ptr<arrow::Table>> make_table() {
 
   std::cout << "2" << std::endl;
 
-  ARROW_ASSIGN_OR_RAISE(auto int32Array, make_numeric_array()); //int32Values));
+  ARROW_ASSIGN_OR_RAISE(auto int32Array, make_numeric_array<int32_t>()); //int32Values));
   std::cout << "3" << std::endl;
 
   std::vector<std::shared_ptr<arrow::Array>> columns = {doubleArray, int32Array};
