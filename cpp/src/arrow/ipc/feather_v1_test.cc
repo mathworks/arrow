@@ -69,6 +69,7 @@ TEST(WriteFeatherV1File, Smoke) {
   auto props = WriteProperties::Defaults();
 
   std::string filename = "testfeather.feater";
+  auto maybe_table = make_table();
   ASSERT_TRUE(maybe_table.ok());
   auto table = maybe_table.ValueOrDie();
   std::cout << "Table: " << std::endl;
