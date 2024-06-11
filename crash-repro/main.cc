@@ -49,7 +49,7 @@ arrow::Result<std::shared_ptr<arrow::Array>> make_numeric_array() { //std::vecto
 
 arrow::Result<std::shared_ptr<arrow::Table>> make_table() {
   //std::vector<int32_t> doubleValues = {1, 2, 3, 4};
-  st//d::vector<int32_t> int32Values = {1, 2, 3, 4};
+  //std::vector<int32_t> int32Values = {1, 2, 3, 4};
   std::cout << "1" << std::endl;
   auto maybeDoubleArray = make_numeric_array<double>(); //doubleValues);
   if (!maybeDoubleArray.ok()) {
