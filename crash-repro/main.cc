@@ -29,41 +29,30 @@
 
 
 template <typename CType>
-arrow::Result<std::shared_ptr<arrow::Array>> make_numeric_array() { //std::vector<CType> values) {
+arrow::Result<std::shared_ptr<arrow::Array>> make_numeric_array(std::vector<CType> values) {
   using TypeClass = typename arrow::CTypeTraits<CType>::ArrowType;
-  std::vector<CType> values = {1, 2, 3};
   std::cout << "create builder" << std::endl;
 
   arrow::NumericBuilder<TypeClass> builder;
   std::cout << "append values" << std::endl;
 
   ARROW_RETURN_NOT_OK(builder.AppendValues(values));
-    std::cout << "done values" << std::endl;
+  std::cout << "done values" << std::endl;
 
   std::shared_ptr<arrow::Array> array;
   ARROW_RETURN_NOT_OK(builder.Finish(&array)); 
-    std::cout << "finish" << std::endl;
+  std::cout << "finish" << std::endl;
 
   return array;
 }
 
 arrow::Result<std::shared_ptr<arrow::Table>> make_table() {
-  //std::vector<int32_t> doubleValues = {1, 2, 3, 4};
-  //std::vector<int32_t> int32Values = {1, 2, 3, 4};
-  std::cout << "1" << std::endl;
-  auto maybeDoubleArray = make_numeric_array<double>(); //doubleValues);
-  if (!maybeDoubleArray.ok()) {
-    std::cout << "Status is : " << maybeDoubleArray.status().message() << std::endl;
-  }
-    std::cout << "after check" << std::endl;
+  std::vector<double> doubleValues = {1, 2, 3, 4};
+  std::vector<int32_t> int32Values = {1, 2, 3, 4};
 
+  ARROW_ASSIGN_OR_RAISE(auto doubleArray, make_numeric_array(doubleValues));
 
-  ARROW_ASSIGN_OR_RAISE(auto doubleArray, maybeDoubleArray);
-
-  std::cout << "2" << std::endl;
-
-  ARROW_ASSIGN_OR_RAISE(auto int32Array, make_numeric_array<int32_t>()); //int32Values));
-  std::cout << "3" << std::endl;
+  ARROW_ASSIGN_OR_RAISE(auto int32Array, make_numeric_array(int32Values));
 
   std::vector<std::shared_ptr<arrow::Array>> columns = {doubleArray, int32Array};
   auto tableSchema = arrow::schema({arrow::field("A", doubleArray->type()), arrow::field("B", int32Array->type())});
@@ -89,11 +78,13 @@ int main(int argc, char* argv[]) {
   std::string filename{argv[1]};
   std::cout << "Filename is " << filename << std::endl;
 
-  auto maybe_table = make_table();
-    std::cout << "4" << std::endl;
+  auto tableSchema = arrow::schema({arrow::field("A", arrow::int32()), arrow::field("B", arrow::float64())});
 
-  if (!maybe_table.ok()) { return 1; }
-    std::cout << "5" << std::endl;
+  std::cout << tableSchema->ToString() << std::endl;
+  //auto maybe_table = make_table();
+
+
+  //if (!maybe_table.ok()) { return 1; }
 
   // auto table = maybe_table.ValueOrDie();
   // std::cout << table->ToString() << std::endl;
