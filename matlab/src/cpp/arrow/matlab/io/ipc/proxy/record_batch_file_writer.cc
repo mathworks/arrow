@@ -21,4 +21,9 @@ namespace arrow::matlab::io::ipc::proxy {
   
   RecordBatchFileWriter::RecordBatchFileWriter() {}
 
+libmexclass::proxy::MakeResult RecordBatchFileWriter::make(
+    const libmexclass::proxy::FunctionArguments& constructor_arguments) {
+
+    return libmexclass::error::Error{"arrow:matlab:NotImplemented", "Not Implemened yet"};
+  }
 } // namespace arrow::matlab::io::ipc::proxy
