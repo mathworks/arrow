@@ -19,7 +19,7 @@
 
 #include "libmexclass/proxy/Proxy.h"
 
-#include "arrow/ipc/witer.h"
+#include "arrow/ipc/writer.h"
 
 namespace arrow::matlab::io::ipc::proxy {
 class RecordBatchFileWriter : public libmexclass::proxy::Proxy {
