@@ -16,6 +16,12 @@ classdef tfeather < matlab.unittest.TestCase
     % implied.  See the License for the specific language governing
     % permissions and limitations under the License.
     
+    methods
+        function filterOnWindows(testCase)
+            testCase.assumeFalse(ispc);
+        end
+    end
+
     methods(TestMethodSetup)
     
         function setupTempWorkingDirectory(testCase)
