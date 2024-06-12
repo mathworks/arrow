@@ -146,8 +146,8 @@ jobs:
           select-by-folder: matlab/test
           strict: true
   windows:
-    name: AMD64 Windows 2022 MATLAB
-    runs-on: windows-2022
+    name: AMD64 Windows 2019 MATLAB
+    runs-on: windows-2019
     if: ${{ !contains(github.event.pull_request.title, 'WIP') }}
     steps:
       - name: Check out repository        
@@ -181,7 +181,7 @@ jobs:
       - name: Build MATLAB Interface
         shell: cmd
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
           bash -c "ci/scripts/matlab_build.sh $(pwd)"
       - name: Run MATLAB Tests
         env:
