@@ -46,6 +46,13 @@ classdef RecordBatchFileWriter < matlab.mixin.Scalar
             obj.Proxy.writeBatch(args);
         end
 
+        function close(obj)
+            arguments
+                obj(1, 1) arrow.io.ipc.RecordBatchFileWriter
+            end
+            obj.Proxy.close();
+        end
+
     end
 
 end

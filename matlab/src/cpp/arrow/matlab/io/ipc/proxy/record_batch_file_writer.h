@@ -34,8 +34,11 @@ class RecordBatchFileWriter : public libmexclass::proxy::Proxy {
   protected:
 
     void writeBatch(libmexclass::proxy::method::Context& context);
-    
+
+    void close(libmexclass::proxy::method::Context& context);
+
     std::shared_ptr<arrow::ipc::RecordBatchWriter> writer;
+    
 };
 
 } // namespace arrow::matlab::io::ipc::proxy 
