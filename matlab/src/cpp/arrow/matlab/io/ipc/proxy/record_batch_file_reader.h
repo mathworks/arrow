@@ -33,6 +33,8 @@ namespace arrow::matlab::io::ipc::proxy {
 
     void getNumRecordBatches(libmexclass::proxy::method::Context& context);
 
+    void readRecordBatch(libmexclass::proxy::method::Context& context);
+
     std::shared_ptr<arrow::ipc::RecordBatchFileReader> reader;
   
   };

@@ -16,17 +16,21 @@
 // under the License.
 
 #include "arrow/io/file.h"
-#include "arrow/io/interfaces.h"
 #include "arrow/ipc/reader.h"
 #include "arrow/matlab/error/error.h"
 #include "arrow/matlab/io/ipc/proxy/record_batch_file_reader.h"
+#include "arrow/matlab/tabular/proxy/record_batch.h"
+#include "arrow/matlab/tabular/proxy/record_batch.h"
 #include "arrow/util/utf8.h"
 
+#include "libmexclass/proxy/ProxyManager.h"
 
 namespace arrow::matlab::io::ipc::proxy {
 
 RecordBatchFileReader::RecordBatchFileReader(std::shared_ptr<arrow::ipc::RecordBatchFileReader> reader) : reader{std::move(reader)} {
   REGISTER_METHOD(RecordBatchFileReader, getNumRecordBatches);
+  REGISTER_METHOD(RecordBatchFileReader, readRecordBatch);
+
 }
 
 libmexclass::proxy::MakeResult RecordBatchFileReader::make(const libmexclass::proxy::FunctionArguments& constructor_arguments) {
@@ -57,6 +61,27 @@ void RecordBatchFileReader::getNumRecordBatches(libmexclass::proxy::method::Cont
     mda::ArrayFactory factory;
     const auto num_batches = reader->num_record_batches();
     context.outputs[0] = factory.createScalar(num_batches);
+}
+
+void RecordBatchFileReader::readRecordBatch(libmexclass::proxy::method::Context& context) {
+    namespace mda = ::matlab::data;
+    using RecordBatchProxy = arrow::matlab::tabular::proxy::RecordBatch;
+
+    mda::StructArray opts = context.inputs[0];
+    const mda::TypedArray<int32_t> matlab_index_mda = opts[0]["Index"];
+    const auto matlab_index = matlab_index_mda[0];
+
+    const auto arrow_index = matlab_index - 1;
+
+    MATLAB_ASSIGN_OR_ERROR_WITH_CONTEXT(const auto record_batch, reader->ReadRecordBatch(arrow_index),
+                                       context, "arrow:matlab:ipc:readfailed");
+
+  auto record_batch_proxy = std::make_shared<RecordBatchProxy>(std::move(record_batch));
+  const auto record_batch_proxy_id = libmexclass::proxy::ProxyManager::manageProxy(record_batch_proxy);
+
+  mda::ArrayFactory factory;
+  const auto record_batch_proxyy_id_mda = factory.createScalar(record_batch_proxy_id);
+  context.outputs[0] = record_batch_proxyy_id_mda;
 }
 
 
