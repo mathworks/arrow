@@ -25,10 +25,12 @@
 
 #include "libmexclass/proxy/ProxyManager.h"
 
+#include <iostream>
+
 namespace arrow::matlab::io::ipc::proxy {
   
   RecordBatchFileWriter::RecordBatchFileWriter(std::shared_ptr<arrow::ipc::RecordBatchWriter> writer) : writer{std::move(writer)} {
-    REGISTER_METHOD(RecordBatchFileWriter, write_batch);
+    REGISTER_METHOD(RecordBatchFileWriter, writeBatch);
   }
 
 libmexclass::proxy::MakeResult RecordBatchFileWriter::make(
@@ -62,7 +64,7 @@ libmexclass::proxy::MakeResult RecordBatchFileWriter::make(
     return std::make_shared<RecordBatchFileWriterProxy>(std::move(writer));
   }
 
-  void RecordBatchFileWriter::write_batch(libmexclass::proxy::method::Context& context) {
+  void RecordBatchFileWriter::writeBatch(libmexclass::proxy::method::Context& context) {
     namespace mda = ::matlab::data;
     using RecordBatchProxy = ::arrow::matlab::tabular::proxy::RecordBatch;
 

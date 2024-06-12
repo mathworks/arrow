@@ -33,7 +33,7 @@ class RecordBatchFileWriter : public libmexclass::proxy::Proxy {
 
   protected:
 
-    void write_batch(libmexclass::proxy::method::Context& context);
+    void writeBatch(libmexclass::proxy::method::Context& context);
     
     std::shared_ptr<arrow::ipc::RecordBatchWriter> writer;
 };

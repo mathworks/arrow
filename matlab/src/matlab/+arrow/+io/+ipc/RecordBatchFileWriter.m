@@ -29,7 +29,16 @@ classdef RecordBatchFileWriter < matlab.mixin.Scalar
                 schema(1, 1) arrow.tabular.Schema
             end
             args = struct(Filename=filename, SchemaProxyID=schema.Proxy.ID);
-            obj.Proxy = arrow.internal.proxy.create("arrow.io.csv.proxy.TableReader", args);
+            obj.Proxy = arrow.internal.proxy.create("arrow.io.ipc.proxy.RecordBatchFileWriter", args);
+        end
+
+        function write(obj, recordBatch)
+            arguments
+                obj(1, 1) arrow.io.ipc.RecordBatchFileWriter
+                recordBatch(1, 1) arrow.tabular.RecordBatch
+            end
+            args = struct(RecordBatchProxyID=recordBatch.Proxy.ID);
+            obj.Proxy.writeBatch(args);
         end
     end
 end
