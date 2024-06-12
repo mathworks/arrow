@@ -24,13 +24,15 @@
 namespace arrow::matlab::io::ipc::proxy {
 class RecordBatchFileWriter : public libmexclass::proxy::Proxy {
  public:
-  RecordBatchFileWriter();
+  RecordBatchFileWriter(std::shared_ptr<arrow::ipc::RecordBatchWriter> writer);
   
   ~RecordBatchFileWriter() {}
 
   static libmexclass::proxy::MakeResult make(
     const libmexclass::proxy::FunctionArguments& constructor_arguments);
 
+  protected:
+    std::shared_ptr<arrow::ipc::RecordBatchWriter> writer;
 };
 
 } // namespace arrow::matlab::io::ipc::proxy 
