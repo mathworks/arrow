@@ -28,7 +28,6 @@ ListArray::ListArray(std::shared_ptr<arrow::ListArray> list_array)
     : proxy::Array{std::move(list_array)} {
   REGISTER_METHOD(ListArray, getValues);
   REGISTER_METHOD(ListArray, getOffsets);
-  REGISTER_METHOD(ListArray, validate);
 }
 
 libmexclass::proxy::MakeResult ListArray::make(

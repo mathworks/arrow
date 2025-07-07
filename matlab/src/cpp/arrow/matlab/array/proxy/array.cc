@@ -42,6 +42,8 @@ Array::Array(std::shared_ptr<arrow::Array> array) : array{std::move(array)} {
   REGISTER_METHOD(Array, isEqual);
   REGISTER_METHOD(Array, slice);
   REGISTER_METHOD(Array, exportToC);
+  REGISTER_METHOD(Array, validate);
+
 }
 
 std::shared_ptr<arrow::Array> Array::unwrap() { return array; }
