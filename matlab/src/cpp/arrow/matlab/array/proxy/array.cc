@@ -19,7 +19,7 @@
 #include "arrow/util/utf8.h"
 
 #include "arrow/matlab/array/proxy/array.h"
-#include "arrow/matlab/array/proxy/validation_mode.h"
+#include "arrow/matlab/array/validation_mode.h"
 #include "arrow/matlab/bit/unpack.h"
 #include "arrow/matlab/error/error.h"
 #include "arrow/matlab/index/validate.h"
