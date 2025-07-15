@@ -58,6 +58,10 @@ Supported `arrow.array.Array` types are included in the table below.
 | `cell`            | `ListArray`      |
 | `table`           | `StructArray`    |
 
+## Example
+
+The [example](example/) directory contains examples which illustrate how to use the MATLAB interface.
+
 ## Prerequisites
 
 To build the MATLAB Interface to Apache Arrow from source, the following software must be installed on the target machine:
@@ -111,50 +115,3 @@ To run the MATLAB tests, start MATLAB in the `arrow/matlab` directory and call t
 ```
 
 Refer to [Testing Guidelines](doc/testing_guidelines_for_the_matlab_interface_to_apache_arrow.md) for more information.
-
-## Usage
-
-Included below are some example code snippets that illustrate how to use the MATLAB interface.
-
-### Feather V1
-
-#### Write a MATLAB table to a Feather V1 file
-
-``` matlab
->> t = table(["A"; "B"; "C"], [1; 2; 3], [true; false; true])
-
-t =
-
-  3×3 table
-
-    Var1    Var2    Var3
-    ____    ____    _____
-
-    "A"      1      true
-    "B"      2      false
-    "C"      3      true
-
->> filename = "table.feather";
-
->> featherwrite(filename, t)
-```
-
-#### Read a Feather V1 file into a MATLAB table
-
-``` matlab
->> filename = "table.feather";
-
->> t = featherread(filename)
-
-t =
-
-  3×3 table
-
-    Var1    Var2    Var3
-    ____    ____    _____
-
-    "A"      1      true
-    "B"      2      false
-    "C"      3      true
-```
-
