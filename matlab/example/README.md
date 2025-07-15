@@ -20,3 +20,10 @@
 # Examples
 
 This directory contains examples which illustrate how to use the MATLAB Interface to Apache Arrow.
+
+* [Array](array.md)
+* [Type](type.md)
+* [Record Batch](record_batch.md)
+* [Schema](schema.md)
+* [Field](field.md)
+* [Feather](feather.md)
